@@ -15,10 +15,10 @@ from __future__ import annotations
 
 import os
 
-from PyQt6.QtCore import Qt, QUrl, QTimer, pyqtSignal
+from PyQt6.QtCore import Qt, QUrl, QTimer, QEvent, pyqtSignal
 from PyQt6.QtGui import QPixmap, QMovie, QFont, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
-    QWidget, QLabel, QVBoxLayout, QHBoxLayout,
+    QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout,
     QSizePolicy, QStackedWidget, QSlider, QPushButton,
 )
 
@@ -184,6 +184,11 @@ class _ControlsBar(QWidget):
         self._timer.setInterval(poll_interval)
         self._timer.timeout.connect(self._poll)
 
+        # Prevent buttons/sliders from stealing keyboard focus —
+        # key events must flow to the parent window's event filter
+        for w in self.findChildren((QPushButton, QSlider)):
+            w.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+
     # ---- Attach / detach ----
     def attach(self, player: "QMediaPlayer", audio_out: "QAudioOutput",
                vol: int = 100):
@@ -220,6 +225,17 @@ class _ControlsBar(QWidget):
         self.seek_slider.setValue(0)
         self.time_label.setText("0:00 / 0:00")
         self.play_btn.setText("▶")
+
+    def seek_by(self, ms: int):
+        """Seek forward (positive) or backward (negative) by ms milliseconds."""
+        if not self._player:
+            return
+        dur = self._player.duration()
+        new_pos = max(0, min(dur, self._player.position() + ms))
+        self._player.setPosition(new_pos)
+        # Update UI immediately (poll timer may be stopped when paused)
+        self.seek_slider.setValue(new_pos)
+        self.time_label.setText(f"{_fmt_ms(new_pos)} / {_fmt_ms(dur)}")
 
     # ---- Slots ----
     def toggle_play_pause(self):
@@ -336,6 +352,10 @@ class _FullscreenWindow(QWidget):
         QShortcut(QKeySequence(Qt.Key.Key_F), self, activated=self.close)
         QShortcut(QKeySequence(Qt.Key.Key_Space), self,
                   activated=self._controls.toggle_play_pause)
+        QShortcut(QKeySequence(Qt.Key.Key_Left), self,
+                  activated=lambda: self._controls.seek_by(-1000))
+        QShortcut(QKeySequence(Qt.Key.Key_Right), self,
+                  activated=lambda: self._controls.seek_by(1000))
 
         self.showFullScreen()
         self.raise_()
@@ -370,6 +390,7 @@ class MediaWidget(QWidget):
         self._player: "QMediaPlayer | None" = None
         self._audio_out: "QAudioOutput | None" = None
         self._fs_window: "_FullscreenWindow | None" = None
+        self._key_filter_win = None  # window we've installed as event filter on
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -428,6 +449,45 @@ class MediaWidget(QWidget):
             self._video_widget.clicked.connect(self._controls.toggle_play_pause)
 
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+
+    # ------------------------------------------------------------------ #
+    #  Arrow-key seek (embedded mode) — event filter on parent window      #
+    # ------------------------------------------------------------------ #
+    def showEvent(self, event):
+        super().showEvent(event)
+        if self._show_controls and self._key_filter_win is None:
+            app = QApplication.instance()
+            if app is not None:
+                app.installEventFilter(self)
+                self._key_filter_win = app
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        if self._key_filter_win is not None:
+            try:
+                self._key_filter_win.removeEventFilter(self)
+            except RuntimeError:
+                pass
+            self._key_filter_win = None
+
+    def eventFilter(self, obj, event):
+        if (event.type() == QEvent.Type.KeyPress
+                and self._asset_type in ("video", "audio")
+                and self._player is not None):
+            key = event.key()
+            if key == Qt.Key.Key_Left:
+                self._controls.seek_by(-1000)
+                return True
+            elif key == Qt.Key.Key_Right:
+                self._controls.seek_by(1000)
+                return True
+            elif key == Qt.Key.Key_Space:
+                self._controls.toggle_play_pause()
+                return True
+            elif key == Qt.Key.Key_F:
+                self._on_fullscreen()
+                return True
+        return super().eventFilter(obj, event)
 
     # ------------------------------------------------------------------ #
     #  Public API                                                           #
