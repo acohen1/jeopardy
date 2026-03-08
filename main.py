@@ -92,22 +92,24 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------ #
     def _apply_global_style(self):
         self.setStyleSheet("""
-            QMainWindow { background: #000033; }
+            QMainWindow { background: #252525; }
             QScrollBar:vertical {
-                background: #000033; width: 12px; margin: 0;
+                background: #2f2f2f; width: 12px; margin: 0;
             }
             QScrollBar::handle:vertical {
-                background: #3333aa; border-radius: 5px; min-height: 20px;
+                background: #505050; border-radius: 5px; min-height: 20px;
             }
+            QScrollBar::handle:vertical:hover { background: #7daf8d; }
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
             QScrollBar:horizontal {
-                background: #000033; height: 12px;
+                background: #2f2f2f; height: 12px;
             }
             QScrollBar::handle:horizontal {
-                background: #3333aa; border-radius: 5px; min-width: 20px;
+                background: #505050; border-radius: 5px; min-width: 20px;
             }
+            QScrollBar::handle:horizontal:hover { background: #7daf8d; }
             QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
-            QToolTip { background: #1a1a3e; color: white; border: 1px solid #3333cc; }
+            QToolTip { background: #38332e; color: #e5ddd5; border: 1px solid #505050; }
         """)
 
 
@@ -124,21 +126,22 @@ def main():
     app.setApplicationName("Jeopardy Game Builder")
     app.setApplicationVersion("1.0.0")
 
-    # Global font
-    font = QFont("Segoe UI", 10)
+    # Global font — slightly larger base
+    font = QFont("Segoe UI", 11)
     app.setFont(font)
 
-    # Dark palette
+    # Dark warm-grey palette
     palette = QPalette()
-    palette.setColor(QPalette.ColorRole.Window, QColor("#000033"))
-    palette.setColor(QPalette.ColorRole.WindowText, QColor("#FFFFFF"))
-    palette.setColor(QPalette.ColorRole.Base, QColor("#0d0d3d"))
-    palette.setColor(QPalette.ColorRole.AlternateBase, QColor("#1a1a44"))
-    palette.setColor(QPalette.ColorRole.Text, QColor("#FFFFFF"))
-    palette.setColor(QPalette.ColorRole.Button, QColor("#060CE9"))
-    palette.setColor(QPalette.ColorRole.ButtonText, QColor("#FFFFFF"))
-    palette.setColor(QPalette.ColorRole.Highlight, QColor("#3333ff"))
-    palette.setColor(QPalette.ColorRole.HighlightedText, QColor("#FFD700"))
+    palette.setColor(QPalette.ColorRole.Window,          QColor("#252525"))
+    palette.setColor(QPalette.ColorRole.WindowText,      QColor("#e5ddd5"))
+    palette.setColor(QPalette.ColorRole.Base,            QColor("#2f2f2f"))
+    palette.setColor(QPalette.ColorRole.AlternateBase,   QColor("#38332e"))
+    palette.setColor(QPalette.ColorRole.Text,            QColor("#e5ddd5"))
+    palette.setColor(QPalette.ColorRole.Button,          QColor("#3a3a3a"))
+    palette.setColor(QPalette.ColorRole.ButtonText,      QColor("#e5ddd5"))
+    palette.setColor(QPalette.ColorRole.Highlight,       QColor("#5a8a6a"))
+    palette.setColor(QPalette.ColorRole.HighlightedText, QColor("#e5ddd5"))
+    palette.setColor(QPalette.ColorRole.PlaceholderText, QColor("#9a9080"))
     app.setPalette(palette)
 
     win = MainWindow()

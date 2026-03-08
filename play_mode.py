@@ -6,7 +6,7 @@ from __future__ import annotations
 import os
 
 from PyQt6.QtCore import Qt, pyqtSignal, QSize
-from PyQt6.QtGui import QFont, QColor, QPalette, QKeySequence, QShortcut
+from PyQt6.QtGui import QFont, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
     QPushButton, QFrame, QScrollArea, QSizePolicy, QDialog,
@@ -18,138 +18,145 @@ from players import PlayerManager
 from media_widget import MediaWidget
 
 # ------------------------------------------------------------------ #
-#  Colour constants                                                    #
+#  Colour palette — dark grey / warm brown / sage green               #
 # ------------------------------------------------------------------ #
-BOARD_BG = "#000033"
-CELL_BLUE = "#060CE9"
-CELL_HOVER = "#1a1aff"
-CELL_USED_BG = "#111133"
-CELL_USED_TEXT = "#333366"
-CATEGORY_BG = "#04089A"
-GOLD = "#FFD700"
-WHITE = "#FFFFFF"
-SCORE_BG = "#000022"
+BG_DARK      = "#252525"   # main window / board background
+BG_MID       = "#2f2f2f"   # panels, cards
+BG_WARM      = "#38332e"   # warm brownish surface
+ACCENT       = "#7daf8d"   # sage green
+ACCENT_HOV   = "#91c4a1"   # hover
+ACCENT_DRK   = "#5a8a6a"   # pressed
+TEXT_PRI     = "#e5ddd5"   # primary text (warm off-white)
+TEXT_MUT     = "#9a9080"   # muted/secondary text
+CELL_BG      = "#3a3a3a"   # board cell background
+CELL_HOV     = "#4a4a4a"   # cell hover
+CELL_PRESS   = "#2a2a2a"   # cell pressed
+CELL_USED    = "#282828"   # used cell
+CELL_USED_T  = "#454545"   # used cell text
+CAT_BG       = "#2e332e"   # category header (slightly green-tinted)
+SCORE_POS    = "#7daf8d"   # positive score
+SCORE_NEG    = "#c97878"   # negative score
+BORDER       = "#505050"   # general border
+OVERLAY_BG   = "#1c1c1c"   # overlay dialog background
+ANSWER_BG    = "#252e25"   # answer reveal background
+DOLLAR_TEXT  = "#c8a96a"   # warm amber for dollar amounts
 
-CATEGORY_STYLE = """
-    QLabel {
-        background: #04089A;
-        color: white;
-        font-size: 15px;
+CATEGORY_STYLE = f"""
+    QLabel {{
+        background: {CAT_BG};
+        color: {TEXT_PRI};
+        font-size: 16px;
         font-weight: bold;
-        border: 2px solid #3333cc;
-        border-radius: 4px;
-        padding: 6px;
-        min-height: 50px;
+        border: 1px solid {BORDER};
+        border-radius: 5px;
+        padding: 8px;
+        min-height: 54px;
         qproperty-alignment: AlignCenter;
-    }
+    }}
 """
 
-CELL_STYLE = """
-    QPushButton {
-        background: #060CE9;
-        color: #FFD700;
-        font-size: 24px;
+CELL_STYLE = f"""
+    QPushButton {{
+        background: {CELL_BG};
+        color: {DOLLAR_TEXT};
+        font-size: 26px;
         font-weight: bold;
-        border: 3px solid #3333ff;
+        border: 1px solid {BORDER};
         border-radius: 6px;
-        min-height: 70px;
-    }
-    QPushButton:hover {
-        background: #1a1aff;
-        border-color: #FFD700;
-    }
-    QPushButton:pressed {
-        background: #04089A;
-    }
+        min-height: 75px;
+    }}
+    QPushButton:hover {{
+        background: {CELL_HOV};
+        border-color: {ACCENT};
+        color: {ACCENT_HOV};
+    }}
+    QPushButton:pressed {{
+        background: {CELL_PRESS};
+    }}
 """
 
-CELL_USED_STYLE = """
-    QPushButton {
-        background: #111133;
-        color: #333366;
-        font-size: 24px;
+CELL_USED_STYLE = f"""
+    QPushButton {{
+        background: {CELL_USED};
+        color: {CELL_USED_T};
+        font-size: 26px;
         font-weight: bold;
-        border: 3px solid #1a1a44;
+        border: 1px solid #353535;
         border-radius: 6px;
-        min-height: 70px;
-    }
+        min-height: 75px;
+    }}
 """
 
-SCOREBOARD_STYLE = """
-    QFrame {
-        background: #000022;
-        border: 2px solid #3333cc;
-        border-radius: 6px;
-    }
+SCOREBOARD_STYLE = f"""
+    QFrame {{
+        background: {BG_MID};
+        border: 1px solid {BORDER};
+        border-radius: 8px;
+    }}
 """
+
+_BTN = (
+    "QPushButton {{ background:{bg}; color:{fg}; font-weight:bold;"
+    " border-radius:5px; padding:6px 14px; border:1px solid {bd}; }}"
+    "QPushButton:hover {{ background:{hov}; }}"
+)
+
+
+def _btn(bg, fg, bd, hov):
+    return (
+        f"QPushButton {{ background:{bg}; color:{fg}; font-weight:bold;"
+        f" border-radius:5px; padding:6px 14px; border:1px solid {bd}; }}"
+        f"QPushButton:hover {{ background:{hov}; }}"
+    )
 
 
 # ------------------------------------------------------------------ #
 #  Cell overlay dialog                                                #
 # ------------------------------------------------------------------ #
 class CellOverlay(QDialog):
-    """
-    Fullscreen-ish overlay shown when a cell is clicked.
-    Shows question + media. Host assigns a winner by clicking a player button.
-    """
-    winner_selected = pyqtSignal(str, int)   # (player_name, value)
+    winner_selected = pyqtSignal(str, int)   # (player_name, delta)
 
-    def __init__(
-        self,
-        cell: Cell,
-        assets_dir: str,
-        players: list,
-        allow_negatives: bool,
-        parent=None,
-    ):
+    def __init__(self, cell: Cell, assets_dir: str, players: list,
+                 allow_negatives: bool, parent=None):
         super().__init__(parent)
         self.cell = cell
         self.assets_dir = assets_dir
         self.players = players
         self.allow_negatives = allow_negatives
-        self._answered = False
 
-        self.setWindowFlags(
-            Qt.WindowType.Dialog |
-            Qt.WindowType.FramelessWindowHint
-        )
-        self.setStyleSheet("background: #06001a; color: white;")
+        self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint)
+        self.setStyleSheet(f"background: {OVERLAY_BG}; color: {TEXT_PRI};")
         self.setModal(True)
         self._build_ui()
 
-        # Escape key closes
         esc = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
         esc.activated.connect(self.reject)
 
     def showEvent(self, event):
         super().showEvent(event)
-        # Resize to parent window
         if self.parent():
-            parent_rect = self.parent().rect()
-            global_pos = self.parent().mapToGlobal(parent_rect.topLeft())
-            self.setGeometry(
-                global_pos.x(), global_pos.y(),
-                parent_rect.width(), parent_rect.height()
-            )
+            r = self.parent().rect()
+            g = self.parent().mapToGlobal(r.topLeft())
+            self.setGeometry(g.x(), g.y(), r.width(), r.height())
         self._media.play()
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(40, 30, 40, 30)
+        layout.setContentsMargins(48, 32, 48, 32)
         layout.setSpacing(16)
 
         # Value badge
         val_label = QLabel(f"${self.cell.value:,}")
         val_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        font = QFont()
-        font.setPointSize(28)
-        font.setBold(True)
-        val_label.setFont(font)
-        val_label.setStyleSheet("color: #FFD700;")
+        vf = QFont()
+        vf.setPointSize(30)
+        vf.setBold(True)
+        val_label.setFont(vf)
+        val_label.setStyleSheet(f"color: {DOLLAR_TEXT};")
         layout.addWidget(val_label)
 
-        # Media widget (hidden if no asset)
-        self._media = MediaWidget(auto_play=False)
+        # Media widget — show_controls=True for video/audio transport bar
+        self._media = MediaWidget(auto_play=False, show_controls=True)
         self._media.setMinimumHeight(220)
         self._media.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         if self.cell.asset_path and self.cell.asset_type:
@@ -163,31 +170,36 @@ class CellOverlay(QDialog):
         self._question_label = QLabel(self.cell.question or "(No question text)")
         self._question_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._question_label.setWordWrap(True)
-        qfont = QFont()
-        qfont.setPointSize(22)
-        self._question_label.setFont(qfont)
-        self._question_label.setStyleSheet("color: white; padding: 16px;")
+        qf = QFont()
+        qf.setPointSize(23)
+        self._question_label.setFont(qf)
+        self._question_label.setStyleSheet(f"color: {TEXT_PRI}; padding: 16px;")
         layout.addWidget(self._question_label)
 
         # Answer (hidden initially)
         self._answer_label = QLabel(f"A: {self.cell.answer}" if self.cell.answer else "")
         self._answer_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._answer_label.setWordWrap(True)
-        afont = QFont()
-        afont.setPointSize(18)
-        self._answer_label.setFont(afont)
-        self._answer_label.setStyleSheet("color: #FFD700; padding: 8px; background: #1a0044; border-radius: 6px;")
+        af = QFont()
+        af.setPointSize(19)
+        self._answer_label.setFont(af)
+        self._answer_label.setStyleSheet(
+            f"color: {ACCENT_HOV}; padding: 12px;"
+            f" background: {ANSWER_BG}; border-radius: 8px;"
+            f" border: 1px solid {ACCENT_DRK};"
+        )
         self._answer_label.setVisible(False)
         layout.addWidget(self._answer_label)
 
-        # --- Buttons row ---
+        # Reveal / Close row
         btn_row = QHBoxLayout()
 
         self._reveal_btn = QPushButton("Reveal Answer")
         self._reveal_btn.setStyleSheet(
-            "QPushButton { background:#444400; color:#FFD700; font-weight:bold;"
-            " border-radius:6px; padding:10px 20px; font-size:14px; }"
-            "QPushButton:hover { background:#666600; }"
+            f"QPushButton {{ background:{BG_WARM}; color:{DOLLAR_TEXT}; font-weight:bold;"
+            f" border-radius:6px; padding:10px 22px; font-size:15px;"
+            f" border:1px solid #60502a; }}"
+            f"QPushButton:hover {{ background:#4a4030; }}"
         )
         self._reveal_btn.clicked.connect(self._reveal_answer)
         btn_row.addWidget(self._reveal_btn)
@@ -196,52 +208,53 @@ class CellOverlay(QDialog):
 
         btn_close = QPushButton("Close  [Esc]")
         btn_close.setStyleSheet(
-            "QPushButton { background:#330000; color:white; border-radius:6px;"
-            " padding:10px 20px; font-size:14px; }"
-            "QPushButton:hover { background:#550000; }"
+            f"QPushButton {{ background:#3a2828; color:{TEXT_PRI}; border-radius:6px;"
+            f" padding:10px 22px; font-size:15px; border:1px solid #5a3838; }}"
+            f"QPushButton:hover {{ background:#503535; }}"
         )
         btn_close.clicked.connect(self.reject)
         btn_row.addWidget(btn_close)
-
         layout.addLayout(btn_row)
 
-        # --- Award section ---
-        award_label = QLabel("Award points to:")
-        award_label.setStyleSheet("color: #aaaacc; font-size: 13px;")
-        award_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(award_label)
+        # Award section
+        award_lbl = QLabel("Award points to:")
+        award_lbl.setStyleSheet(f"color: {TEXT_MUT}; font-size: 14px;")
+        award_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(award_lbl)
 
-        player_row = QHBoxLayout()
-        player_row.setSpacing(10)
+        award_row = QHBoxLayout()
+        award_row.setSpacing(10)
         for p in self.players:
-            btn = QPushButton(f"✓ {p.name}")
+            btn = QPushButton(f"+ {p.name}")
             btn.setStyleSheet(
-                "QPushButton { background:#004400; color:#aaffaa; font-weight:bold;"
-                " font-size:13px; border-radius:6px; padding:8px 14px; }"
-                "QPushButton:hover { background:#006600; color:white; }"
+                f"QPushButton {{ background:#283828; color:#aaddaa; font-weight:bold;"
+                f" font-size:14px; border-radius:6px; padding:9px 16px;"
+                f" border:1px solid {ACCENT_DRK}; }}"
+                f"QPushButton:hover {{ background:#385038; color:{TEXT_PRI}; }}"
             )
             btn.clicked.connect(lambda _, name=p.name: self._award(name, self.cell.value))
-            player_row.addWidget(btn)
+            award_row.addWidget(btn)
+        layout.addLayout(award_row)
 
         if self.allow_negatives:
-            deduct_label = QLabel("Deduct (wrong):")
-            deduct_label.setStyleSheet("color: #aaaacc; font-size: 13px;")
-            layout.addWidget(deduct_label)
+            deduct_lbl = QLabel("Deduct (wrong answer):")
+            deduct_lbl.setStyleSheet(f"color: {TEXT_MUT}; font-size: 14px;")
+            deduct_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            layout.addWidget(deduct_lbl)
 
             deduct_row = QHBoxLayout()
             deduct_row.setSpacing(10)
             for p in self.players:
-                btn = QPushButton(f"✗ {p.name}")
+                btn = QPushButton(f"- {p.name}")
                 btn.setStyleSheet(
-                    "QPushButton { background:#440000; color:#ffaaaa; font-weight:bold;"
-                    " font-size:13px; border-radius:6px; padding:8px 14px; }"
-                    "QPushButton:hover { background:#660000; color:white; }"
+                    f"QPushButton {{ background:#382828; color:#ddaaaa; font-weight:bold;"
+                    f" font-size:14px; border-radius:6px; padding:9px 16px;"
+                    f" border:1px solid #7a4040; }}"
+                    f"QPushButton:hover {{ background:#503838; color:{TEXT_PRI}; }}"
                 )
                 btn.clicked.connect(lambda _, name=p.name: self._award(name, -self.cell.value))
                 deduct_row.addWidget(btn)
             layout.addLayout(deduct_row)
-
-        layout.addLayout(player_row)
 
     def _reveal_answer(self):
         self._answer_label.setVisible(True)
@@ -263,60 +276,48 @@ class CellOverlay(QDialog):
 class PlayMode(QWidget):
     edit_requested = pyqtSignal()
 
-    def __init__(
-        self,
-        board: Board,
-        player_manager: PlayerManager,
-        assets_dir: str,
-        parent=None,
-    ):
+    def __init__(self, board: Board, player_manager: PlayerManager,
+                 assets_dir: str, parent=None):
         super().__init__(parent)
         self.board = board
         self.player_manager = player_manager
         self.assets_dir = assets_dir
         self._cell_buttons: list[list[QPushButton]] = []
         self._score_labels: dict[str, QLabel] = {}
-        self.setStyleSheet(f"background: {BOARD_BG};")
+        self.setStyleSheet(f"background: {BG_DARK};")
         self._build_ui()
 
-    # ------------------------------------------------------------------ #
-    #  Build UI                                                             #
-    # ------------------------------------------------------------------ #
     def _build_ui(self):
         root = QVBoxLayout(self)
-        root.setContentsMargins(8, 8, 8, 8)
-        root.setSpacing(6)
+        root.setContentsMargins(10, 10, 10, 10)
+        root.setSpacing(8)
 
         # ---- Top bar ----
         top_bar = QHBoxLayout()
+        top_bar.setSpacing(8)
 
         btn_edit = QPushButton("← Edit Board")
-        btn_edit.setStyleSheet(
-            "QPushButton { background:#333366; color:white; font-weight:bold;"
-            " border-radius:4px; padding:6px 14px; }"
-            "QPushButton:hover { background:#4444aa; }"
-        )
+        btn_edit.setStyleSheet(_btn(BG_MID, TEXT_PRI, BORDER, "#3a3a3a"))
         btn_edit.clicked.connect(self.edit_requested.emit)
         top_bar.addWidget(btn_edit)
 
         btn_reset = QPushButton("Reset Board")
-        btn_reset.setStyleSheet(
-            "QPushButton { background:#442200; color:white; border-radius:4px; padding:6px 14px; }"
-            "QPushButton:hover { background:#663300; }"
-        )
+        btn_reset.setStyleSheet(_btn("#3a2828", TEXT_PRI, "#5a3838", "#503535"))
         btn_reset.clicked.connect(self._on_reset)
         top_bar.addWidget(btn_reset)
 
         self._neg_checkbox = QCheckBox("Allow negative scores")
         self._neg_checkbox.setChecked(self.board.allow_negatives)
-        self._neg_checkbox.setStyleSheet("color: white;")
+        self._neg_checkbox.setStyleSheet(f"color: {TEXT_MUT};")
         self._neg_checkbox.toggled.connect(self._on_neg_toggle)
         top_bar.addWidget(self._neg_checkbox)
 
         top_bar.addStretch()
 
         title = QLabel("JEOPARDY!")
-        title.setStyleSheet("color:#FFD700; font-size:22px; font-weight:bold; letter-spacing:4px;")
+        title.setStyleSheet(
+            f"color: {ACCENT}; font-size: 24px; font-weight: bold; letter-spacing: 5px;"
+        )
         top_bar.addWidget(title)
         top_bar.addStretch()
 
@@ -326,18 +327,16 @@ class PlayMode(QWidget):
         center = QHBoxLayout()
         center.setSpacing(10)
 
-        # Board grid
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("background:#000033; border:none;")
+        scroll.setStyleSheet(f"background:{BG_DARK}; border:none;")
         self._board_widget = QWidget()
-        self._board_widget.setStyleSheet("background:#000033;")
+        self._board_widget.setStyleSheet(f"background:{BG_DARK};")
         self._board_layout = QGridLayout(self._board_widget)
         self._board_layout.setSpacing(6)
         scroll.setWidget(self._board_widget)
         center.addWidget(scroll, stretch=5)
 
-        # Scoreboard
         self._score_panel = self._build_scoreboard()
         center.addWidget(self._score_panel, stretch=1)
 
@@ -349,27 +348,30 @@ class PlayMode(QWidget):
         frame = QFrame()
         frame.setStyleSheet(SCOREBOARD_STYLE)
         frame.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+        frame.setMinimumWidth(180)
+
         layout = QVBoxLayout(frame)
-        layout.setContentsMargins(10, 10, 10, 10)
-        layout.setSpacing(8)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setSpacing(10)
 
         header = QLabel("SCORES")
         header.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        header.setStyleSheet("color:#FFD700; font-size:16px; font-weight:bold; letter-spacing:2px;")
+        hf = QFont()
+        hf.setPointSize(14)
+        hf.setBold(True)
+        header.setFont(hf)
+        header.setStyleSheet(f"color: {ACCENT}; letter-spacing: 3px;")
         layout.addWidget(header)
 
         layout.addWidget(self._h_divider())
 
         self._score_layout = QVBoxLayout()
-        self._score_layout.setSpacing(6)
+        self._score_layout.setSpacing(10)
         layout.addLayout(self._score_layout)
         layout.addStretch()
 
         btn_reset_scores = QPushButton("Reset Scores")
-        btn_reset_scores.setStyleSheet(
-            "QPushButton { background:#440000; color:white; border-radius:4px; padding:5px; }"
-            "QPushButton:hover { background:#660000; }"
-        )
+        btn_reset_scores.setStyleSheet(_btn("#3a2828", TEXT_PRI, "#5a3838", "#503535"))
         btn_reset_scores.clicked.connect(self._on_reset_scores)
         layout.addWidget(btn_reset_scores)
 
@@ -379,11 +381,10 @@ class PlayMode(QWidget):
     def _h_divider(self) -> QFrame:
         line = QFrame()
         line.setFrameShape(QFrame.Shape.HLine)
-        line.setStyleSheet("color: #3333cc;")
+        line.setStyleSheet(f"color: {BORDER};")
         return line
 
     def _build_board_grid(self):
-        # Clear
         while self._board_layout.count():
             item = self._board_layout.takeAt(0)
             if item.widget():
@@ -392,7 +393,6 @@ class PlayMode(QWidget):
 
         b = self.board
 
-        # Category headers
         for c in range(b.num_cols):
             lbl = QLabel(b.categories[c])
             lbl.setStyleSheet(CATEGORY_STYLE)
@@ -401,14 +401,13 @@ class PlayMode(QWidget):
             lbl.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
             self._board_layout.addWidget(lbl, 0, c)
 
-        # Cell buttons
         for r in range(b.num_rows):
             row_buttons = []
             for c in range(b.num_cols):
                 cell = b.cells[r][c]
                 btn = QPushButton(f"${cell.value:,}")
                 btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-                btn.setMinimumSize(100, 70)
+                btn.setMinimumSize(100, 75)
                 if cell.used:
                     btn.setStyleSheet(CELL_USED_STYLE)
                     btn.setEnabled(False)
@@ -420,35 +419,59 @@ class PlayMode(QWidget):
             self._cell_buttons.append(row_buttons)
 
     # ------------------------------------------------------------------ #
-    #  Scoreboard refresh                                                   #
+    #  Scoreboard                                                           #
     # ------------------------------------------------------------------ #
     def _refresh_scoreboard(self):
-        # Clear existing score widgets
         while self._score_layout.count():
             item = self._score_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
+            elif item.layout():
+                # clean up nested layout items
+                while item.layout().count():
+                    child = item.layout().takeAt(0)
+                    if child.widget():
+                        child.widget().deleteLater()
         self._score_labels.clear()
 
         for p in self.player_manager.players:
-            row = QHBoxLayout()
+            card = QFrame()
+            card.setStyleSheet(
+                f"QFrame {{ background: {BG_WARM}; border-radius: 7px;"
+                f" border: 1px solid {BORDER}; }}"
+            )
+            card_layout = QVBoxLayout(card)
+            card_layout.setContentsMargins(10, 8, 10, 8)
+            card_layout.setSpacing(2)
+
             name_lbl = QLabel(p.name)
-            name_lbl.setStyleSheet("color: white; font-size: 14px; font-weight: bold;")
             name_lbl.setWordWrap(True)
+            nf = QFont()
+            nf.setPointSize(13)
+            nf.setBold(True)
+            name_lbl.setFont(nf)
+            name_lbl.setStyleSheet(f"color: {TEXT_PRI}; border: none;")
+
             score_lbl = QLabel(f"${p.score:,}")
             score_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            color = "#FFD700" if p.score >= 0 else "#FF4444"
-            score_lbl.setStyleSheet(f"color: {color}; font-size: 16px; font-weight: bold;")
-            row.addWidget(name_lbl, stretch=2)
-            row.addWidget(score_lbl, stretch=1)
-            self._score_layout.addLayout(row)
+            sf = QFont()
+            sf.setPointSize(20)
+            sf.setBold(True)
+            score_lbl.setFont(sf)
+            color = SCORE_POS if p.score >= 0 else SCORE_NEG
+            score_lbl.setStyleSheet(f"color: {color}; border: none;")
+
+            card_layout.addWidget(name_lbl)
+            card_layout.addWidget(score_lbl)
+            self._score_layout.addWidget(card)
             self._score_labels[p.name] = score_lbl
 
     def _update_score_label(self, name: str, score: int):
         lbl = self._score_labels.get(name)
         if lbl:
-            color = "#FFD700" if score >= 0 else "#FF4444"
-            lbl.setStyleSheet(f"color: {color}; font-size: 16px; font-weight: bold;")
+            color = SCORE_POS if score >= 0 else SCORE_NEG
+            # Only update colour — font is already set via setFont() at creation
+            lbl.setStyleSheet(f"color: {color}; border: none;")
             lbl.setText(f"${score:,}")
 
     # ------------------------------------------------------------------ #
@@ -459,18 +482,16 @@ class PlayMode(QWidget):
         if cell.used:
             return
 
-        players = self.player_manager.players
         overlay = CellOverlay(
             cell=cell,
             assets_dir=self.assets_dir,
-            players=players,
+            players=self.player_manager.players,
             allow_negatives=self.board.allow_negatives,
             parent=self,
         )
         overlay.winner_selected.connect(self._on_winner_selected)
         overlay.exec()
 
-        # Mark cell used after overlay closes (regardless of whether awarded)
         cell.used = True
         btn = self._cell_buttons[row][col]
         btn.setStyleSheet(CELL_USED_STYLE)
@@ -478,7 +499,6 @@ class PlayMode(QWidget):
 
     def _on_winner_selected(self, name: str, delta: int):
         self.player_manager.award(name, delta)
-        # Find updated score
         for p in self.player_manager.players:
             if p.name == name:
                 self._update_score_label(name, p.score)
@@ -489,8 +509,7 @@ class PlayMode(QWidget):
     # ------------------------------------------------------------------ #
     def _on_reset(self):
         reply = QMessageBox.question(
-            self, "Reset Board",
-            "Mark all cells as unused and reset board state?",
+            self, "Reset Board", "Mark all cells as unused?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply == QMessageBox.StandardButton.Yes:
@@ -499,8 +518,7 @@ class PlayMode(QWidget):
 
     def _on_reset_scores(self):
         reply = QMessageBox.question(
-            self, "Reset Scores",
-            "Reset all player scores to 0?",
+            self, "Reset Scores", "Reset all player scores to 0?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply == QMessageBox.StandardButton.Yes:
@@ -510,9 +528,6 @@ class PlayMode(QWidget):
     def _on_neg_toggle(self, checked: bool):
         self.board.allow_negatives = checked
 
-    # ------------------------------------------------------------------ #
-    #  Called when switching into play mode                                #
-    # ------------------------------------------------------------------ #
     def refresh(self):
         self._neg_checkbox.setChecked(self.board.allow_negatives)
         self._build_board_grid()
