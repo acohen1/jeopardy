@@ -17,7 +17,7 @@ from PyQt6.QtWidgets import (
     QPushButton, QLabel, QLineEdit, QSpinBox, QFileDialog,
     QDialog, QDialogButtonBox, QTextEdit, QFormLayout, QMessageBox,
     QListWidget, QListWidgetItem, QInputDialog, QSizePolicy, QFrame,
-    QGroupBox,
+    QGroupBox, QCheckBox,
 )
 
 from board import Board, Cell, copy_asset_to_assets_dir
@@ -187,6 +187,14 @@ class CellEditorDialog(QDialog):
         )
         self._clear_btn.clicked.connect(self._clear_asset)
         btn_row.addWidget(self._clear_btn)
+        self._blur_check = QCheckBox("Blur media during gameplay")
+        self._blur_check.setStyleSheet(
+            f"QCheckBox {{ color: {TEXT_PRI}; font-size: 13px; }}"
+            f"QCheckBox::indicator {{ width: 18px; height: 18px; }}"
+        )
+        self._blur_check.setToolTip("Start with a gaussian blur in play mode; players can reveal it")
+        btn_row.addWidget(self._blur_check)
+
         btn_row.addStretch()
         asset_layout.addLayout(btn_row)
 
@@ -217,6 +225,7 @@ class CellEditorDialog(QDialog):
     def _populate(self):
         self._question_edit.setPlainText(self.cell.question)
         self._answer_edit.setText(self.cell.answer)
+        self._blur_check.setChecked(self.cell.blur)
         if self.cell.asset_path:
             full = os.path.join(self.assets_dir, self.cell.asset_path)
             self._asset_label.setText(self.cell.asset_path)
@@ -268,6 +277,7 @@ class CellEditorDialog(QDialog):
     def accept(self):
         self.cell.question = self._question_edit.toPlainText().strip()
         self.cell.answer = self._answer_edit.text().strip()
+        self.cell.blur = self._blur_check.isChecked()
 
         if self._pending_asset_src:
             rel, atype = copy_asset_to_assets_dir(self._pending_asset_src, self.assets_dir)
