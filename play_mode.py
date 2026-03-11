@@ -162,26 +162,9 @@ class CellOverlay(QDialog):
         if self.cell.asset_path and self.cell.asset_type:
             full = os.path.join(self.assets_dir, self.cell.asset_path)
             self._media.load(full, self.cell.asset_type)
-            if self.cell.blur:
-                self._media.set_blur(True)
             layout.addWidget(self._media)
         else:
             self._media.setVisible(False)
-
-        # Blur toggle (only shown if blur was set in edit mode)
-        self._blur_btn = QPushButton("Remove Blur")
-        self._blur_btn.setStyleSheet(
-            f"QPushButton {{ background:{BG_WARM}; color:{ACCENT_HOV}; font-weight:bold;"
-            f" border-radius:6px; padding:8px 18px; font-size:14px;"
-            f" border:1px solid {ACCENT_DRK}; }}"
-            f"QPushButton:hover {{ background:#4a4030; color:{TEXT_PRI}; }}"
-        )
-        self._blur_btn.clicked.connect(self._toggle_blur)
-        self._blur_active = self.cell.blur
-        if self.cell.blur and self.cell.asset_path:
-            layout.addWidget(self._blur_btn)
-        else:
-            self._blur_btn.setVisible(False)
 
         # Question text
         self._question_label = QLabel(self.cell.question or "(No question text)")
@@ -272,11 +255,6 @@ class CellOverlay(QDialog):
                 btn.clicked.connect(lambda _, name=p.name: self._award(name, -self.cell.value))
                 deduct_row.addWidget(btn)
             layout.addLayout(deduct_row)
-
-    def _toggle_blur(self):
-        self._blur_active = not self._blur_active
-        self._media.set_blur(self._blur_active)
-        self._blur_btn.setText("Remove Blur" if self._blur_active else "Apply Blur")
 
     def _reveal_answer(self):
         self._answer_label.setVisible(True)

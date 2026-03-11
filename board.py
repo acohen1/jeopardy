@@ -23,7 +23,6 @@ class Cell:
     asset_path: str = ""   # relative path inside assets/ folder
     asset_type: str = ""   # "image", "gif", "video", "audio", or ""
     used: bool = False
-    blur: bool = False      # start with gaussian blur in play mode
 
     def to_dict(self) -> dict:
         return {
@@ -33,7 +32,6 @@ class Cell:
             "asset_path": self.asset_path,
             "asset_type": self.asset_type,
             "used": self.used,
-            "blur": self.blur,
         }
 
     @classmethod
@@ -45,7 +43,6 @@ class Cell:
             asset_path=d.get("asset_path", ""),
             asset_type=d.get("asset_type", ""),
             used=d.get("used", False),
-            blur=d.get("blur", False),
         )
 
 

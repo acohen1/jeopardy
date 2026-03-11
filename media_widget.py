@@ -438,18 +438,6 @@ class MediaWidget(QWidget):
 
         self._stack.setCurrentIndex(0)
 
-        # ---- Blur overlay (child of self, positioned over stack) ----
-        self._blur_overlay = QLabel(self)
-        self._blur_overlay.setStyleSheet(
-            "background: rgba(18, 18, 18, 210); border-radius: 8px;"
-        )
-        self._blur_overlay.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        bf = QFont()
-        bf.setPointSize(22)
-        self._blur_overlay.setFont(bf)
-        self._blur_overlay.setText("Content Hidden")
-        self._blur_overlay.setVisible(False)
-
         # ---- Transport controls bar ----
         self._controls = _ControlsBar(self)
         self._controls.fs_btn.clicked.connect(self._on_fullscreen)
@@ -505,13 +493,6 @@ class MediaWidget(QWidget):
     # ------------------------------------------------------------------ #
     #  Public API                                                           #
     # ------------------------------------------------------------------ #
-    def set_blur(self, enabled: bool):
-        """Show or hide the blur overlay on the media display."""
-        self._blur_overlay.setVisible(enabled)
-        if enabled:
-            self._blur_overlay.setGeometry(self._stack.geometry())
-            self._blur_overlay.raise_()
-
     def load(self, path: str, asset_type: str):
         self.stop()
         self._asset_type = asset_type
@@ -536,10 +517,6 @@ class MediaWidget(QWidget):
         self._controls.setVisible(self._show_controls and is_timed)
         # Fullscreen only makes sense for video
         self._controls.fs_btn.setVisible(asset_type == "video")
-
-        # Keep blur on top if active
-        if self._blur_overlay.isVisible():
-            self._blur_overlay.raise_()
 
     def play(self):
         if self._asset_type == "gif" and self._movie:
@@ -568,8 +545,6 @@ class MediaWidget(QWidget):
         super().resizeEvent(event)
         if self._asset_type == "image" and hasattr(self, "_raw_pixmap"):
             self._fit_image()
-        if self._blur_overlay.isVisible():
-            self._blur_overlay.setGeometry(self._stack.geometry())
 
     # ------------------------------------------------------------------ #
     #  Internal loaders                                                  #
