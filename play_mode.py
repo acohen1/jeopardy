@@ -171,10 +171,18 @@ class CellOverlay(QDialog):
         self._close_btn.setVisible(False)
         self._close_btn.clicked.connect(self.reject)
 
+        self._reveal_btn = QPushButton("Reveal Answer  →  [A]")
+        self._reveal_btn.setStyleSheet(_nav_btn_style)
+        self._reveal_btn.setFixedHeight(28)
+        self._reveal_btn.clicked.connect(self._reveal_answer)
+        reveal_shortcut = QShortcut(QKeySequence(Qt.Key.Key_A), self)
+        reveal_shortcut.activated.connect(self._reveal_answer)
+
         top_bar.addWidget(self._back_btn)
         top_bar.addStretch()
         top_bar.addWidget(val_label)
         top_bar.addStretch()
+        top_bar.addWidget(self._reveal_btn)
         top_bar.addWidget(self._close_btn)
         layout.addLayout(top_bar)
 
@@ -214,6 +222,25 @@ class CellOverlay(QDialog):
         self._q_renderer.load_slide(self.cell.question_slide, self.assets_dir)
         q_layout.addWidget(self._q_renderer, stretch=1)
 
+        award_lbl_q = QLabel("Award points to:")
+        award_lbl_q.setStyleSheet(f"color: {TEXT_MUT}; font-size: 14px;")
+        award_lbl_q.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        q_layout.addWidget(award_lbl_q)
+
+        award_row_q = QHBoxLayout()
+        award_row_q.setSpacing(10)
+        for p in self.players:
+            btn = QPushButton(f"+ {p.name}")
+            btn.setStyleSheet(
+                f"QPushButton {{ background:#283828; color:#aaddaa; font-weight:bold;"
+                f" font-size:14px; border-radius:6px; padding:9px 16px;"
+                f" border:1px solid {ACCENT_DRK}; }}"
+                f"QPushButton:hover {{ background:#385038; color:{TEXT_PRI}; }}"
+            )
+            btn.clicked.connect(lambda _, name=p.name: self._award_no_close(name, self.cell.value))
+            award_row_q.addWidget(btn)
+        q_layout.addLayout(award_row_q)
+
         if self.allow_negatives:
             deduct_lbl_q = QLabel("Deduct (wrong answer):")
             deduct_lbl_q.setStyleSheet(f"color: {TEXT_MUT}; font-size: 14px;")
@@ -234,17 +261,6 @@ class CellOverlay(QDialog):
                 deduct_row_q.addWidget(btn)
             q_layout.addLayout(deduct_row_q)
 
-        reveal_btn = QPushButton("Reveal Answer  →  [A]")
-        reveal_btn.setStyleSheet(
-            f"QPushButton {{ background:{BG_WARM}; color:{DOLLAR_TEXT}; font-weight:bold;"
-            f" border-radius:6px; padding:10px 22px; font-size:15px;"
-            f" border:1px solid #60502a; }}"
-            f"QPushButton:hover {{ background:#4a4030; }}"
-        )
-        reveal_btn.clicked.connect(self._reveal_answer)
-        reveal_shortcut = QShortcut(QKeySequence(Qt.Key.Key_A), self)
-        reveal_shortcut.activated.connect(self._reveal_answer)
-        q_layout.addWidget(reveal_btn)
 
         self._pages.addWidget(q_page)
 
@@ -303,6 +319,9 @@ class CellOverlay(QDialog):
         self._pages.addWidget(a_page)
         self._pages.setCurrentIndex(self._start_page)
         if self._start_page == 1:
+            self._reveal_btn.setVisible(False)
+            self._back_btn.setVisible(True)
+            self._close_btn.setVisible(True)
             self._a_renderer.play()
         else:
             self._q_renderer.play()
@@ -310,6 +329,7 @@ class CellOverlay(QDialog):
     def _reveal_answer(self):
         self._q_renderer.stop()
         self._pages.setCurrentIndex(1)
+        self._reveal_btn.setVisible(False)
         self._back_btn.setVisible(True)
         self._close_btn.setVisible(True)
         self._a_renderer.play()
@@ -317,6 +337,7 @@ class CellOverlay(QDialog):
     def _back_to_question(self):
         self._a_renderer.stop()
         self._pages.setCurrentIndex(0)
+        self._reveal_btn.setVisible(True)
         self._back_btn.setVisible(False)
         self._close_btn.setVisible(False)
         self._q_renderer.play()
@@ -328,10 +349,14 @@ class CellOverlay(QDialog):
             self._a_renderer.stop()
             self.accept()
 
+    def _award_no_close(self, name: str, delta: int):
+        self.winner_selected.emit(name, delta)
+        self._show_toast(f"+ ${delta:,}  to  {name}", positive=True)
+
     def _deduct_with_feedback(self, btn: QPushButton, name: str):
         self._award(name, -self.cell.value)
         self._flash_button(btn)
-        self._show_toast(f"- ${self.cell.value:,}  from  {name}")
+        self._show_toast(f"- ${self.cell.value:,}  from  {name}", positive=False)
 
     def _flash_button(self, btn: QPushButton):
         normal_style = btn.styleSheet()
@@ -341,10 +366,20 @@ class CellOverlay(QDialog):
         )
         QTimer.singleShot(300, lambda: btn.setStyleSheet(normal_style))
 
-    def _show_toast(self, text: str):
+    def _show_toast(self, text: str, positive: bool = False):
         self._toast_hide_timer.stop()
         self._toast_anim.stop()
         self._toast.setText(text)
+        if positive:
+            self._toast.setStyleSheet(
+                "background:#1a5a1a; color:#aaffaa; border-radius:8px;"
+                " padding:8px 20px; font-size:14px; font-weight:bold;"
+            )
+        else:
+            self._toast.setStyleSheet(
+                "background:#5a1a1a; color:#ffaaaa; border-radius:8px;"
+                " padding:8px 20px; font-size:14px; font-weight:bold;"
+            )
         self._toast.adjustSize()
         # Position bottom-centre, just above the reveal button (~150px from bottom)
         margin = 140
