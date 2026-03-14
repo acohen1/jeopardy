@@ -3,12 +3,13 @@ play_mode.py — Gameplay UI: Jeopardy board grid + cell overlay + scoreboard.
 """
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QKeySequence, QShortcut
+from PyQt6.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve, pyqtSignal
+from PyQt6.QtGui import QCursor, QKeySequence, QShortcut
+from PyQt6.QtWidgets import QGraphicsOpacityEffect
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
     QPushButton, QFrame, QScrollArea, QSizePolicy, QDialog,
-    QMessageBox, QCheckBox,
+    QMessageBox, QCheckBox, QMenu,
 )
 
 from board import Board, Cell
@@ -111,12 +112,13 @@ class CellOverlay(QDialog):
     winner_selected = pyqtSignal(str, int)   # (player_name, delta)
 
     def __init__(self, cell: Cell, assets_dir: str, players: list,
-                 allow_negatives: bool, parent=None):
+                 allow_negatives: bool, parent=None, start_page: int = 0):
         super().__init__(parent)
         self.cell = cell
         self.assets_dir = assets_dir
         self.players = players
         self.allow_negatives = allow_negatives
+        self._start_page = start_page
 
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint)
         self.setStyleSheet(f"background: {OVERLAY_BG}; color: {TEXT_PRI};")
@@ -140,16 +142,65 @@ class CellOverlay(QDialog):
         layout.setContentsMargins(48, 32, 48, 32)
         layout.setSpacing(16)
 
-        # Value badge (always visible)
+        # Top bar: nav buttons flanking the value badge
+        _nav_btn_style = (
+            f"QPushButton {{ background:transparent; color:{TEXT_MUT}; border-radius:5px;"
+            f" padding:4px 12px; font-size:12px; border:1px solid {BORDER}; }}"
+            f"QPushButton:hover {{ background:{BG_MID}; color:{TEXT_PRI}; border-color:#707070; }}"
+        )
+        top_bar = QHBoxLayout()
+        top_bar.setContentsMargins(0, 0, 0, 0)
+        top_bar.setSpacing(8)
+
+        self._back_btn = QPushButton("← Question  [Q]")
+        self._back_btn.setStyleSheet(_nav_btn_style)
+        self._back_btn.setFixedHeight(28)
+        self._back_btn.setVisible(False)
+        self._back_btn.clicked.connect(self._back_to_question)
+        back_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Q), self)
+        back_shortcut.activated.connect(self._back_to_question)
+
         val_label = QLabel(f"${self.cell.value:,}")
         val_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         val_label.setFont(_font(30, bold=True))
         val_label.setStyleSheet(f"color: {DOLLAR_TEXT};")
-        layout.addWidget(val_label)
+
+        self._close_btn = QPushButton("Close  [Esc]")
+        self._close_btn.setStyleSheet(_nav_btn_style)
+        self._close_btn.setFixedHeight(28)
+        self._close_btn.setVisible(False)
+        self._close_btn.clicked.connect(self.reject)
+
+        top_bar.addWidget(self._back_btn)
+        top_bar.addStretch()
+        top_bar.addWidget(val_label)
+        top_bar.addStretch()
+        top_bar.addWidget(self._close_btn)
+        layout.addLayout(top_bar)
 
         # Stacked pages: question (0) and answer (1)
         self._pages = QStackedWidget()
         layout.addWidget(self._pages, stretch=1)
+
+        # Toast notification (hidden by default)
+        self._toast = QLabel("")
+        self._toast.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._toast.setStyleSheet(
+            "background:#5a1a1a; color:#ffaaaa; border-radius:8px;"
+            " padding:8px 20px; font-size:14px; font-weight:bold;"
+        )
+        self._toast.setVisible(False)
+        self._toast_effect = QGraphicsOpacityEffect(self._toast)
+        self._toast.setGraphicsEffect(self._toast_effect)
+        self._toast_anim = QPropertyAnimation(self._toast_effect, b"opacity")
+        self._toast_anim.setEasingCurve(QEasingCurve.Type.InOutQuad)
+        self._toast_hide_timer = QTimer(self)
+        self._toast_hide_timer.setSingleShot(True)
+        self._toast_hide_timer.timeout.connect(self._hide_toast)
+        self._toast_anim.finished.connect(lambda: self._toast.setVisible(False))
+        # Toast is a free-floating child — not in any layout
+        self._toast.setParent(self)
+        self._toast.setVisible(False)
 
         # ---- Page 0: Question ----
         q_page = QWidget()
@@ -163,7 +214,27 @@ class CellOverlay(QDialog):
         self._q_renderer.load_slide(self.cell.question_slide, self.assets_dir)
         q_layout.addWidget(self._q_renderer, stretch=1)
 
-        reveal_btn = QPushButton("Reveal Answer  →")
+        if self.allow_negatives:
+            deduct_lbl_q = QLabel("Deduct (wrong answer):")
+            deduct_lbl_q.setStyleSheet(f"color: {TEXT_MUT}; font-size: 14px;")
+            deduct_lbl_q.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            q_layout.addWidget(deduct_lbl_q)
+
+            deduct_row_q = QHBoxLayout()
+            deduct_row_q.setSpacing(10)
+            for p in self.players:
+                btn = QPushButton(f"- {p.name}")
+                btn.setStyleSheet(
+                    f"QPushButton {{ background:#382828; color:#ddaaaa; font-weight:bold;"
+                    f" font-size:14px; border-radius:6px; padding:9px 16px;"
+                    f" border:1px solid #7a4040; }}"
+                    f"QPushButton:hover {{ background:#503838; color:{TEXT_PRI}; }}"
+                )
+                btn.clicked.connect(lambda _, name=p.name, b=btn: self._deduct_with_feedback(b, name))
+                deduct_row_q.addWidget(btn)
+            q_layout.addLayout(deduct_row_q)
+
+        reveal_btn = QPushButton("Reveal Answer  →  [A]")
         reveal_btn.setStyleSheet(
             f"QPushButton {{ background:{BG_WARM}; color:{DOLLAR_TEXT}; font-weight:bold;"
             f" border-radius:6px; padding:10px 22px; font-size:15px;"
@@ -171,6 +242,8 @@ class CellOverlay(QDialog):
             f"QPushButton:hover {{ background:#4a4030; }}"
         )
         reveal_btn.clicked.connect(self._reveal_answer)
+        reveal_shortcut = QShortcut(QKeySequence(Qt.Key.Key_A), self)
+        reveal_shortcut.activated.connect(self._reveal_answer)
         q_layout.addWidget(reveal_btn)
 
         self._pages.addWidget(q_page)
@@ -186,16 +259,6 @@ class CellOverlay(QDialog):
                                        QSizePolicy.Policy.Expanding)
         self._a_renderer.load_slide(self.cell.answer_slide, self.assets_dir)
         a_layout.addWidget(self._a_renderer, stretch=1)
-
-        # Back to question button
-        back_btn = QPushButton("← Back to Question")
-        back_btn.setStyleSheet(
-            f"QPushButton {{ background:{BG_MID}; color:{TEXT_MUT}; border-radius:6px;"
-            f" padding:8px 16px; font-size:13px; border:1px solid {BORDER}; }}"
-            f"QPushButton:hover {{ background:#3a3a3a; color:{TEXT_PRI}; }}"
-        )
-        back_btn.clicked.connect(self._back_to_question)
-        a_layout.addWidget(back_btn)
 
         # Award section
         award_lbl = QLabel("Award points to:")
@@ -237,34 +300,67 @@ class CellOverlay(QDialog):
                 deduct_row.addWidget(btn)
             a_layout.addLayout(deduct_row)
 
-        # Close button
-        btn_close = QPushButton("Close  [Esc]")
-        btn_close.setStyleSheet(
-            f"QPushButton {{ background:#3a2828; color:{TEXT_PRI}; border-radius:6px;"
-            f" padding:10px 22px; font-size:15px; border:1px solid #5a3838; }}"
-            f"QPushButton:hover {{ background:#503535; }}"
-        )
-        btn_close.clicked.connect(self.reject)
-        a_layout.addWidget(btn_close)
-
         self._pages.addWidget(a_page)
-        self._pages.setCurrentIndex(0)
+        self._pages.setCurrentIndex(self._start_page)
+        if self._start_page == 1:
+            self._a_renderer.play()
+        else:
+            self._q_renderer.play()
 
     def _reveal_answer(self):
         self._q_renderer.stop()
         self._pages.setCurrentIndex(1)
+        self._back_btn.setVisible(True)
+        self._close_btn.setVisible(True)
         self._a_renderer.play()
 
     def _back_to_question(self):
         self._a_renderer.stop()
         self._pages.setCurrentIndex(0)
+        self._back_btn.setVisible(False)
+        self._close_btn.setVisible(False)
         self._q_renderer.play()
 
     def _award(self, name: str, delta: int):
         self.winner_selected.emit(name, delta)
-        self._q_renderer.stop()
-        self._a_renderer.stop()
-        self.accept()
+        if delta > 0:
+            self._q_renderer.stop()
+            self._a_renderer.stop()
+            self.accept()
+
+    def _deduct_with_feedback(self, btn: QPushButton, name: str):
+        self._award(name, -self.cell.value)
+        self._flash_button(btn)
+        self._show_toast(f"- ${self.cell.value:,}  from  {name}")
+
+    def _flash_button(self, btn: QPushButton):
+        normal_style = btn.styleSheet()
+        btn.setStyleSheet(
+            "QPushButton { background:#cc2222; color:#ffffff; font-weight:bold;"
+            " font-size:14px; border-radius:6px; padding:9px 16px; border:1px solid #ff4444; }"
+        )
+        QTimer.singleShot(300, lambda: btn.setStyleSheet(normal_style))
+
+    def _show_toast(self, text: str):
+        self._toast_hide_timer.stop()
+        self._toast_anim.stop()
+        self._toast.setText(text)
+        self._toast.adjustSize()
+        # Position bottom-centre, just above the reveal button (~150px from bottom)
+        margin = 140
+        x = (self.width() - self._toast.width()) // 2
+        y = self.height() - self._toast.height() - margin
+        self._toast.setGeometry(x, y, self._toast.width(), self._toast.height())
+        self._toast.raise_()
+        self._toast_effect.setOpacity(1.0)
+        self._toast.setVisible(True)
+        self._toast_hide_timer.start(1500)
+
+    def _hide_toast(self):
+        self._toast_anim.setDuration(400)
+        self._toast_anim.setStartValue(1.0)
+        self._toast_anim.setEndValue(0.0)
+        self._toast_anim.start()
 
     def reject(self):
         self._q_renderer.stop()
@@ -409,7 +505,10 @@ class PlayMode(QWidget):
                 btn.setMinimumSize(100, 75)
                 if cell.used:
                     btn.setStyleSheet(CELL_USED_STYLE)
-                    btn.setEnabled(False)
+                    btn.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+                    btn.customContextMenuRequested.connect(
+                        lambda _, row=r, col=c: self._on_cell_right_clicked(row, col)
+                    )
                 else:
                     btn.setStyleSheet(CELL_STYLE)
                     btn.clicked.connect(lambda _, row=r, col=c: self._on_cell_clicked(row, col))
@@ -474,21 +573,55 @@ class PlayMode(QWidget):
         cell = self.board.cells[row][col]
         if cell.used:
             return
+        self._open_overlay(row, col, start_page=0)
+        cell.used = True
+        btn = self._cell_buttons[row][col]
+        btn.setStyleSheet(CELL_USED_STYLE)
+        btn.clicked.disconnect()
+        btn.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        btn.customContextMenuRequested.connect(
+            lambda _, r=row, c=col: self._on_cell_right_clicked(r, c)
+        )
 
+    def _open_overlay(self, row: int, col: int, start_page: int = 0):
         overlay = CellOverlay(
-            cell=cell,
+            cell=self.board.cells[row][col],
             assets_dir=self.assets_dir,
             players=self.player_manager.players,
             allow_negatives=self.board.allow_negatives,
             parent=self,
+            start_page=start_page,
         )
         overlay.winner_selected.connect(self._on_winner_selected)
         overlay.exec()
 
-        cell.used = True
+    def _on_cell_right_clicked(self, row: int, col: int):
+        menu = QMenu(self)
+        menu.setStyleSheet(
+            f"QMenu {{ background:{BG_MID}; color:{TEXT_PRI}; border:1px solid {BORDER};"
+            f" font-size:14px; padding:4px; }}"
+            f"QMenu::item {{ padding:8px 20px; border-radius:4px; }}"
+            f"QMenu::item:selected {{ background:{ACCENT_DRK}; }}"
+            f"QMenu::separator {{ height:1px; background:{BORDER}; margin:4px 8px; }}"
+        )
+        act_review = menu.addAction("Review")
+        menu.addSeparator()
+        act_reset = menu.addAction("Reset Cell")
+
+        action = menu.exec(QCursor.pos())
+        if action == act_review:
+            self._open_overlay(row, col, start_page=0)
+        elif action == act_reset:
+            self._reset_cell(row, col)
+
+    def _reset_cell(self, row: int, col: int):
+        cell = self.board.cells[row][col]
+        cell.used = False
         btn = self._cell_buttons[row][col]
-        btn.setStyleSheet(CELL_USED_STYLE)
-        btn.setEnabled(False)
+        btn.setStyleSheet(CELL_STYLE)
+        btn.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
+        btn.customContextMenuRequested.disconnect()
+        btn.clicked.connect(lambda _, r=row, c=col: self._on_cell_clicked(r, c))
 
     def _on_winner_selected(self, name: str, delta: int):
         self.player_manager.award(name, delta)

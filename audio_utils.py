@@ -18,6 +18,22 @@ except ImportError:
     pass
 
 
+def _configure_ffmpeg():
+    """Point pydub at the bundled ffmpeg.exe when running as a PyInstaller app,
+    or fall back to finding it on the system PATH in dev mode."""
+    if not _PYDUB_AVAILABLE:
+        return
+    import sys
+    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    candidate = os.path.join(base, "ffmpeg.exe")
+    if os.path.isfile(candidate):
+        AudioSegment.converter = candidate
+        AudioSegment.ffmpeg = candidate
+
+
+_configure_ffmpeg()
+
+
 def is_available() -> bool:
     """Check whether pydub is installed and audio stacking can work."""
     return _PYDUB_AVAILABLE

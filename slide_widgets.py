@@ -208,8 +208,12 @@ class SlideRenderer(QWidget):
                 if slide.audio_stack and len(audio_list) > 1 and audio_utils.is_available():
                     audio_paths = [os.path.join(assets_dir, a.path) for a in audio_list]
                     volumes = [a.volume for a in audio_list]
-                    mixed = audio_utils.mix_audio_overlay(audio_paths, assets_dir, volumes)
-                    self._media.load(mixed, "audio")
+                    try:
+                        mixed = audio_utils.mix_audio_overlay(audio_paths, assets_dir, volumes)
+                        self._media.load(mixed, "audio")
+                    except Exception as e:
+                        print(f"[SlideRenderer] Audio mix failed, falling back: {e}")
+                        self._media.load(audio_paths[0], "audio")
                 else:
                     full = os.path.join(assets_dir, audio_list[0].path)
                     self._media.load(full, "audio")
@@ -423,6 +427,10 @@ class SlideEditor(QWidget):
                         self._pending_assets[i].volume = val / 100.0
                         sl.setToolTip(f"Volume: {val}%")
                         pl.setText(f"{val}%")
+                        # Update live playback volume if this track is playing
+                        if (self._preview_playing_idx == i
+                                and self._preview_audio_out is not None):
+                            self._preview_audio_out.setVolume(val / 100.0)
                     return handler
 
                 slider.valueChanged.connect(

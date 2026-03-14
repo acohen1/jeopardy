@@ -18,6 +18,7 @@ pyinstaller ^
     --onedir ^
     --icon "icon.ico" ^
     --add-data "icon.ico;." ^
+    --add-binary "ffmpeg.exe;." ^
     --collect-all PyQt6 ^
     main.py
 
