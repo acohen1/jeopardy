@@ -356,6 +356,8 @@ class _FullscreenWindow(QWidget):
                   activated=lambda: self._controls.seek_by(-1000))
         QShortcut(QKeySequence(Qt.Key.Key_Right), self,
                   activated=lambda: self._controls.seek_by(1000))
+        QShortcut(QKeySequence(Qt.Key.Key_R), self,
+                  activated=self._controls._on_rewind)
 
         self.showFullScreen()
         self.raise_()
@@ -487,6 +489,9 @@ class MediaWidget(QWidget):
                 return True
             elif key == Qt.Key.Key_F:
                 self._on_fullscreen()
+                return True
+            elif key == Qt.Key.Key_R:
+                self._controls._on_rewind()
                 return True
         return super().eventFilter(obj, event)
 
