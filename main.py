@@ -6,8 +6,15 @@ QMainWindow using a QStackedWidget.
 """
 from __future__ import annotations
 
+import ctypes
 import os
 import sys
+
+# Tell Windows this is its own app (not python.exe) so the taskbar icon works
+if sys.platform == "win32":
+    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+        "chaewon.jeopardy.game"
+    )
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QPalette, QColor, QIcon
@@ -46,6 +53,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Jeopardy! Game Builder")
+        self.setWindowIcon(QIcon(os.path.join(os.path.dirname(__file__), "icon.ico")))
         self.resize(1280, 800)
         self.setMinimumSize(800, 600)
 
