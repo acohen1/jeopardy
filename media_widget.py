@@ -72,10 +72,6 @@ def _fmt_ms(ms: int) -> str:
     return f"{m}:{s:02d}"
 
 
-def _make_controls_bar(parent: QWidget, poll_interval: int = 300) -> "_ControlsBar":
-    """Factory — builds a self-contained transport bar widget."""
-    return _ControlsBar(parent, poll_interval)
-
 
 # ------------------------------------------------------------------ #
 #  Clickable QVideoWidget subclass                                    #
@@ -108,7 +104,6 @@ class _ControlsBar(QWidget):
         self._player: "QMediaPlayer | None" = None
         self._audio_out: "QAudioOutput | None" = None
         self._dragging = False
-        self._show_fs_btn = True
 
         self.setStyleSheet(f"background: {_CTRL_BG}; border-radius: 6px;")
         root = QVBoxLayout(self)

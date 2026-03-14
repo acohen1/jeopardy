@@ -20,7 +20,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QPalette, QColor, QIcon
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QStackedWidget, QWidget,
-    QVBoxLayout, QLabel, QMessageBox,
+    QVBoxLayout, QMessageBox,
 )
 
 from board import Board

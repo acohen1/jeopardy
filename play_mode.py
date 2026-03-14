@@ -105,12 +105,6 @@ SCOREBOARD_STYLE = f"""
     }}
 """
 
-_BTN = (
-    "QPushButton {{ background:{bg}; color:{fg}; font-weight:bold;"
-    " border-radius:5px; padding:6px 14px; border:1px solid {bd}; }}"
-    "QPushButton:hover {{ background:{hov}; }}"
-)
-
 
 def _btn(bg, fg, bd, hov):
     return (
