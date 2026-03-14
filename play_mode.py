@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import os
 
-from PyQt6.QtCore import Qt, pyqtSignal, QSize
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
@@ -16,6 +16,15 @@ from PyQt6.QtWidgets import (
 from board import Board, Cell
 from players import PlayerManager
 from media_widget import MediaWidget
+
+_EMOJI_FAMILIES = ["Segoe UI", "Segoe UI Emoji", "Noto Color Emoji"]
+
+def _font(size: int, bold: bool = False) -> QFont:
+    """Create a QFont with emoji fallback support."""
+    f = QFont("Segoe UI", size)
+    f.setFamilies(_EMOJI_FAMILIES)
+    f.setBold(bold)
+    return f
 
 # ------------------------------------------------------------------ #
 #  Colour palette — dark grey / warm brown / sage green               #
@@ -45,6 +54,7 @@ CATEGORY_STYLE = f"""
     QLabel {{
         background: {CAT_BG};
         color: {TEXT_PRI};
+        font-family: 'Segoe UI', 'Segoe UI Emoji', 'Noto Color Emoji';
         font-size: 16px;
         font-weight: bold;
         border: 1px solid {BORDER};
@@ -148,10 +158,7 @@ class CellOverlay(QDialog):
         # Value badge
         val_label = QLabel(f"${self.cell.value:,}")
         val_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        vf = QFont()
-        vf.setPointSize(30)
-        vf.setBold(True)
-        val_label.setFont(vf)
+        val_label.setFont(_font(30, bold=True))
         val_label.setStyleSheet(f"color: {DOLLAR_TEXT};")
         layout.addWidget(val_label)
 
@@ -170,9 +177,7 @@ class CellOverlay(QDialog):
         self._question_label = QLabel(self.cell.question or "(No question text)")
         self._question_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._question_label.setWordWrap(True)
-        qf = QFont()
-        qf.setPointSize(23)
-        self._question_label.setFont(qf)
+        self._question_label.setFont(_font(23))
         self._question_label.setStyleSheet(f"color: {TEXT_PRI}; padding: 16px;")
         layout.addWidget(self._question_label)
 
@@ -180,9 +185,7 @@ class CellOverlay(QDialog):
         self._answer_label = QLabel(f"A: {self.cell.answer}" if self.cell.answer else "")
         self._answer_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._answer_label.setWordWrap(True)
-        af = QFont()
-        af.setPointSize(19)
-        self._answer_label.setFont(af)
+        self._answer_label.setFont(_font(19))
         self._answer_label.setStyleSheet(
             f"color: {ACCENT_HOV}; padding: 12px;"
             f" background: {ANSWER_BG}; border-radius: 8px;"
@@ -356,10 +359,7 @@ class PlayMode(QWidget):
 
         header = QLabel("SCORES")
         header.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        hf = QFont()
-        hf.setPointSize(14)
-        hf.setBold(True)
-        header.setFont(hf)
+        header.setFont(_font(14, bold=True))
         header.setStyleSheet(f"color: {ACCENT}; letter-spacing: 3px;")
         layout.addWidget(header)
 
@@ -446,18 +446,12 @@ class PlayMode(QWidget):
 
             name_lbl = QLabel(p.name)
             name_lbl.setWordWrap(True)
-            nf = QFont()
-            nf.setPointSize(13)
-            nf.setBold(True)
-            name_lbl.setFont(nf)
+            name_lbl.setFont(_font(13, bold=True))
             name_lbl.setStyleSheet(f"color: {TEXT_PRI}; border: none;")
 
             score_lbl = QLabel(f"${p.score:,}")
             score_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            sf = QFont()
-            sf.setPointSize(20)
-            sf.setBold(True)
-            score_lbl.setFont(sf)
+            score_lbl.setFont(_font(20, bold=True))
             color = SCORE_POS if p.score >= 0 else SCORE_NEG
             score_lbl.setStyleSheet(f"color: {color}; border: none;")
 

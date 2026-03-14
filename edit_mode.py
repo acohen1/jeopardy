@@ -10,10 +10,10 @@ from __future__ import annotations
 
 import os
 
-from PyQt6.QtCore import Qt, pyqtSignal, QMimeData
-from PyQt6.QtGui import QFont, QColor, QPalette, QDragEnterEvent, QDropEvent
+from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QFont, QDragEnterEvent, QDropEvent, QKeySequence
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QScrollArea,
+    QApplication, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QScrollArea,
     QPushButton, QLabel, QLineEdit, QSpinBox, QFileDialog,
     QDialog, QDialogButtonBox, QTextEdit, QFormLayout, QMessageBox,
     QListWidget, QListWidgetItem, QInputDialog, QSizePolicy, QFrame,
@@ -40,6 +40,7 @@ HEADER_STYLE = f"""
     QLineEdit {{
         background: {BG_WARM};
         color: {TEXT_PRI};
+        font-family: 'Segoe UI', 'Segoe UI Emoji', 'Noto Color Emoji';
         font-size: 15px;
         font-weight: bold;
         border: 1px solid {BORDER};
@@ -117,6 +118,12 @@ _SPINBOX_STYLE = f"""
 """
 
 
+class _PlainTextEdit(QTextEdit):
+    """QTextEdit that always pastes as plain text (preserves emoji from rich sources)."""
+    def insertFromMimeData(self, source):
+        self.insertPlainText(source.text())
+
+
 class CellEditorDialog(QDialog):
     """Full asset editor for a single board cell."""
 
@@ -137,20 +144,25 @@ class CellEditorDialog(QDialog):
         form = QFormLayout()
         form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
 
-        self._question_edit = QTextEdit()
+        _ef = QFont("Segoe UI", 14)
+        _ef.setFamilies(["Segoe UI", "Segoe UI Emoji", "Noto Color Emoji"])
+
+        self._question_edit = _PlainTextEdit()
         self._question_edit.setPlaceholderText("Enter the clue / question text…")
+        self._question_edit.setFont(_ef)
         self._question_edit.setStyleSheet(
             f"background:{BG_MID}; color:{TEXT_PRI};"
-            f" border:1px solid {BORDER}; border-radius:5px; font-size:14px;"
+            f" border:1px solid {BORDER}; border-radius:5px;"
         )
         self._question_edit.setMinimumHeight(90)
         form.addRow("Question:", self._question_edit)
 
         self._answer_edit = QLineEdit()
         self._answer_edit.setPlaceholderText("Enter the answer…")
+        self._answer_edit.setFont(_ef)
         self._answer_edit.setStyleSheet(
             f"background:{BG_WARM}; color:{DOLLAR_TEXT};"
-            f" border:1px solid {BORDER}; border-radius:5px; padding:5px; font-size:14px;"
+            f" border:1px solid {BORDER}; border-radius:5px; padding:5px;"
         )
         form.addRow("Answer:", self._answer_edit)
 
@@ -198,8 +210,8 @@ class CellEditorDialog(QDialog):
 
         layout.addWidget(asset_group)
 
-        # Drag-and-drop hint
-        hint = QLabel("Tip: drag & drop a media file onto this dialog to attach it.")
+        # Drag-and-drop / paste hint
+        hint = QLabel("Tip: drag & drop or paste (Ctrl+V) a media file to attach it.")
         hint.setStyleSheet(f"color: {TEXT_MUT}; font-size: 12px;")
         layout.addWidget(hint)
 
@@ -261,6 +273,45 @@ class CellEditorDialog(QDialog):
             path = urls[0].toLocalFile()
             if os.path.isfile(path):
                 self._attach_asset(path)
+
+    def eventFilter(self, obj, event):
+        """Intercept Ctrl+V — route image/file pastes to asset, let text through."""
+        if (event.type() == event.Type.KeyPress
+                and event.matches(QKeySequence.StandardKey.Paste)):
+            clipboard = QApplication.clipboard()
+            mime = clipboard.mimeData()
+            # Pasted file paths (e.g. copied from Explorer)
+            if mime.hasUrls():
+                for url in mime.urls():
+                    path = url.toLocalFile()
+                    if os.path.isfile(path):
+                        from board import _ext_to_type
+                        ext = os.path.splitext(path)[1].lower()
+                        if _ext_to_type(ext):  # only intercept known media types
+                            self._attach_asset(path)
+                            return True
+            # Pasted image data (e.g. screenshot or copied image)
+            if mime.hasImage():
+                img = clipboard.image()
+                if not img.isNull():
+                    os.makedirs(self.assets_dir, exist_ok=True)
+                    i = 1
+                    while True:
+                        dest = os.path.join(self.assets_dir, f"pasted_image_{i}.png")
+                        if not os.path.exists(dest):
+                            break
+                        i += 1
+                    img.save(dest, "PNG")
+                    self._attach_asset(dest)
+                    return True
+            # Plain text — let the focused widget handle it normally
+        return super().eventFilter(obj, event)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        # Install filter on child text widgets so we can intercept Ctrl+V
+        self._question_edit.installEventFilter(self)
+        self._answer_edit.installEventFilter(self)
 
     # ------------------------------------------------------------------ #
     #  Accept                                                               #
