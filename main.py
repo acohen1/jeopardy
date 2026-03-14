@@ -31,14 +31,24 @@ from play_mode import PlayMode
 # ------------------------------------------------------------------ #
 #  Resolve assets directory                                           #
 # ------------------------------------------------------------------ #
-def _get_assets_dir() -> str:
-    """Return absolute path to the assets/ folder next to the executable (or script)."""
+def _get_data_dir() -> str:
+    """Return a persistent user-data directory that survives app updates.
+
+    - Built app: %APPDATA%/Chaewon Jeopardy/
+    - Dev mode:  project directory (next to main.py)
+    """
     if getattr(sys, "frozen", False):
-        # Running as PyInstaller bundle
-        base = sys._MEIPASS  # type: ignore[attr-defined]
+        base = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")),
+                            "Chaewon Jeopardy")
     else:
         base = os.path.dirname(os.path.abspath(__file__))
-    assets = os.path.join(base, "assets")
+    os.makedirs(base, exist_ok=True)
+    return base
+
+
+def _get_assets_dir() -> str:
+    """Return absolute path to the assets/ folder inside the data directory."""
+    assets = os.path.join(_get_data_dir(), "assets")
     os.makedirs(assets, exist_ok=True)
     return assets
 
