@@ -53,7 +53,8 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Jeopardy! Game Builder")
-        self.setWindowIcon(QIcon(os.path.join(os.path.dirname(__file__), "icon.ico")))
+        _base = getattr(sys, "_MEIPASS", os.path.dirname(__file__))
+        self.setWindowIcon(QIcon(os.path.join(_base, "icon.ico")))
         self.resize(1280, 800)
         self.setMinimumSize(800, 600)
 

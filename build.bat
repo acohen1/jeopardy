@@ -13,6 +13,7 @@ pyinstaller ^
     --windowed ^
     --onedir ^
     --icon "icon.ico" ^
+    --add-data "icon.ico;." ^
     --add-data "assets;assets" ^
     --collect-all PyQt6 ^
     main.py
