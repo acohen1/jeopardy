@@ -3,10 +3,8 @@ play_mode.py — Gameplay UI: Jeopardy board grid + cell overlay + scoreboard.
 """
 from __future__ import annotations
 
-import os
-
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QFont, QKeySequence, QShortcut
+from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
     QPushButton, QFrame, QScrollArea, QSizePolicy, QDialog,
@@ -15,16 +13,7 @@ from PyQt6.QtWidgets import (
 
 from board import Board, Cell
 from players import PlayerManager
-from media_widget import MediaWidget
-
-_EMOJI_FAMILIES = ["Segoe UI", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"]
-
-def _font(size: int, bold: bool = False) -> QFont:
-    """Create a QFont with emoji fallback support."""
-    f = QFont("Segoe UI", size)
-    f.setFamilies(_EMOJI_FAMILIES)
-    f.setBold(bold)
-    return f
+from slide_widgets import SlideRenderer, _font
 
 # ------------------------------------------------------------------ #
 #  Colour palette — dark grey / warm brown / sage green               #
@@ -118,6 +107,7 @@ def _btn(bg, fg, bd, hov):
 #  Cell overlay dialog                                                #
 # ------------------------------------------------------------------ #
 class CellOverlay(QDialog):
+    """Two-page gameplay overlay: question slide → answer slide."""
     winner_selected = pyqtSignal(str, int)   # (player_name, delta)
 
     def __init__(self, cell: Cell, assets_dir: str, players: list,
@@ -142,82 +132,76 @@ class CellOverlay(QDialog):
             r = self.parent().rect()
             g = self.parent().mapToGlobal(r.topLeft())
             self.setGeometry(g.x(), g.y(), r.width(), r.height())
-        self._media.play()
+        self._q_renderer.play()
 
     def _build_ui(self):
+        from PyQt6.QtWidgets import QStackedWidget
         layout = QVBoxLayout(self)
         layout.setContentsMargins(48, 32, 48, 32)
         layout.setSpacing(16)
 
-        # Value badge
+        # Value badge (always visible)
         val_label = QLabel(f"${self.cell.value:,}")
         val_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         val_label.setFont(_font(30, bold=True))
         val_label.setStyleSheet(f"color: {DOLLAR_TEXT};")
         layout.addWidget(val_label)
 
-        # Media widget — show_controls=True for video/audio transport bar
-        self._media = MediaWidget(auto_play=False, show_controls=True)
-        self._media.setMinimumHeight(220)
-        self._media.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        if self.cell.asset_path and self.cell.asset_type:
-            full = os.path.join(self.assets_dir, self.cell.asset_path)
-            self._media.load(full, self.cell.asset_type)
-            layout.addWidget(self._media)
-        else:
-            self._media.setVisible(False)
+        # Stacked pages: question (0) and answer (1)
+        self._pages = QStackedWidget()
+        layout.addWidget(self._pages, stretch=1)
 
-        # Question text
-        self._question_label = QLabel(self.cell.question or "(No question text)")
-        self._question_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._question_label.setWordWrap(True)
-        self._question_label.setFont(_font(23))
-        self._question_label.setStyleSheet(f"color: {TEXT_PRI}; padding: 16px;")
-        layout.addWidget(self._question_label)
+        # ---- Page 0: Question ----
+        q_page = QWidget()
+        q_layout = QVBoxLayout(q_page)
+        q_layout.setContentsMargins(0, 0, 0, 0)
+        q_layout.setSpacing(12)
 
-        # Answer (hidden initially)
-        self._answer_label = QLabel(f"A: {self.cell.answer}" if self.cell.answer else "")
-        self._answer_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._answer_label.setWordWrap(True)
-        self._answer_label.setFont(_font(19))
-        self._answer_label.setStyleSheet(
-            f"color: {ACCENT_HOV}; padding: 12px;"
-            f" background: {ANSWER_BG}; border-radius: 8px;"
-            f" border: 1px solid {ACCENT_DRK};"
-        )
-        self._answer_label.setVisible(False)
-        layout.addWidget(self._answer_label)
+        self._q_renderer = SlideRenderer(auto_play=False, show_controls=True)
+        self._q_renderer.setSizePolicy(QSizePolicy.Policy.Expanding,
+                                       QSizePolicy.Policy.Expanding)
+        self._q_renderer.load_slide(self.cell.question_slide, self.assets_dir)
+        q_layout.addWidget(self._q_renderer, stretch=1)
 
-        # Reveal / Close row
-        btn_row = QHBoxLayout()
-
-        self._reveal_btn = QPushButton("Reveal Answer")
-        self._reveal_btn.setStyleSheet(
+        reveal_btn = QPushButton("Reveal Answer  →")
+        reveal_btn.setStyleSheet(
             f"QPushButton {{ background:{BG_WARM}; color:{DOLLAR_TEXT}; font-weight:bold;"
             f" border-radius:6px; padding:10px 22px; font-size:15px;"
             f" border:1px solid #60502a; }}"
             f"QPushButton:hover {{ background:#4a4030; }}"
         )
-        self._reveal_btn.clicked.connect(self._reveal_answer)
-        btn_row.addWidget(self._reveal_btn)
+        reveal_btn.clicked.connect(self._reveal_answer)
+        q_layout.addWidget(reveal_btn)
 
-        btn_row.addStretch()
+        self._pages.addWidget(q_page)
 
-        btn_close = QPushButton("Close  [Esc]")
-        btn_close.setStyleSheet(
-            f"QPushButton {{ background:#3a2828; color:{TEXT_PRI}; border-radius:6px;"
-            f" padding:10px 22px; font-size:15px; border:1px solid #5a3838; }}"
-            f"QPushButton:hover {{ background:#503535; }}"
+        # ---- Page 1: Answer ----
+        a_page = QWidget()
+        a_layout = QVBoxLayout(a_page)
+        a_layout.setContentsMargins(0, 0, 0, 0)
+        a_layout.setSpacing(12)
+
+        self._a_renderer = SlideRenderer(auto_play=False, show_controls=True)
+        self._a_renderer.setSizePolicy(QSizePolicy.Policy.Expanding,
+                                       QSizePolicy.Policy.Expanding)
+        self._a_renderer.load_slide(self.cell.answer_slide, self.assets_dir)
+        a_layout.addWidget(self._a_renderer, stretch=1)
+
+        # Back to question button
+        back_btn = QPushButton("← Back to Question")
+        back_btn.setStyleSheet(
+            f"QPushButton {{ background:{BG_MID}; color:{TEXT_MUT}; border-radius:6px;"
+            f" padding:8px 16px; font-size:13px; border:1px solid {BORDER}; }}"
+            f"QPushButton:hover {{ background:#3a3a3a; color:{TEXT_PRI}; }}"
         )
-        btn_close.clicked.connect(self.reject)
-        btn_row.addWidget(btn_close)
-        layout.addLayout(btn_row)
+        back_btn.clicked.connect(self._back_to_question)
+        a_layout.addWidget(back_btn)
 
         # Award section
         award_lbl = QLabel("Award points to:")
         award_lbl.setStyleSheet(f"color: {TEXT_MUT}; font-size: 14px;")
         award_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(award_lbl)
+        a_layout.addWidget(award_lbl)
 
         award_row = QHBoxLayout()
         award_row.setSpacing(10)
@@ -231,13 +215,13 @@ class CellOverlay(QDialog):
             )
             btn.clicked.connect(lambda _, name=p.name: self._award(name, self.cell.value))
             award_row.addWidget(btn)
-        layout.addLayout(award_row)
+        a_layout.addLayout(award_row)
 
         if self.allow_negatives:
             deduct_lbl = QLabel("Deduct (wrong answer):")
             deduct_lbl.setStyleSheet(f"color: {TEXT_MUT}; font-size: 14px;")
             deduct_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            layout.addWidget(deduct_lbl)
+            a_layout.addWidget(deduct_lbl)
 
             deduct_row = QHBoxLayout()
             deduct_row.setSpacing(10)
@@ -251,19 +235,40 @@ class CellOverlay(QDialog):
                 )
                 btn.clicked.connect(lambda _, name=p.name: self._award(name, -self.cell.value))
                 deduct_row.addWidget(btn)
-            layout.addLayout(deduct_row)
+            a_layout.addLayout(deduct_row)
+
+        # Close button
+        btn_close = QPushButton("Close  [Esc]")
+        btn_close.setStyleSheet(
+            f"QPushButton {{ background:#3a2828; color:{TEXT_PRI}; border-radius:6px;"
+            f" padding:10px 22px; font-size:15px; border:1px solid #5a3838; }}"
+            f"QPushButton:hover {{ background:#503535; }}"
+        )
+        btn_close.clicked.connect(self.reject)
+        a_layout.addWidget(btn_close)
+
+        self._pages.addWidget(a_page)
+        self._pages.setCurrentIndex(0)
 
     def _reveal_answer(self):
-        self._answer_label.setVisible(True)
-        self._reveal_btn.setEnabled(False)
+        self._q_renderer.stop()
+        self._pages.setCurrentIndex(1)
+        self._a_renderer.play()
+
+    def _back_to_question(self):
+        self._a_renderer.stop()
+        self._pages.setCurrentIndex(0)
+        self._q_renderer.play()
 
     def _award(self, name: str, delta: int):
         self.winner_selected.emit(name, delta)
-        self._media.stop()
+        self._q_renderer.stop()
+        self._a_renderer.stop()
         self.accept()
 
     def reject(self):
-        self._media.stop()
+        self._q_renderer.stop()
+        self._a_renderer.stop()
         super().reject()
 
 

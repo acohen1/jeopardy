@@ -11,18 +11,17 @@ from __future__ import annotations
 import os
 
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QFont, QDragEnterEvent, QDropEvent, QKeySequence
+from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
-    QApplication, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QScrollArea,
+    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QScrollArea,
     QPushButton, QLabel, QLineEdit, QSpinBox, QFileDialog,
-    QDialog, QDialogButtonBox, QTextEdit, QFormLayout, QMessageBox,
+    QDialog, QDialogButtonBox, QFormLayout, QMessageBox, QGroupBox,
     QListWidget, QListWidgetItem, QInputDialog, QSizePolicy, QFrame,
-    QGroupBox,
+    QTabWidget,
 )
 
-from board import Board, Cell, copy_asset_to_assets_dir
+from board import Board, Cell
 from players import PlayerManager
-from media_widget import MediaWidget
 
 # ---- colour palette (matches play_mode.py) ----
 BG_DARK     = "#252525"
@@ -118,104 +117,42 @@ _SPINBOX_STYLE = f"""
 """
 
 
-class _PlainTextEdit(QTextEdit):
-    """QTextEdit that always pastes as plain text (preserves emoji from rich sources)."""
-    def insertFromMimeData(self, source):
-        self.insertPlainText(source.text())
-
-
 class CellEditorDialog(QDialog):
-    """Full asset editor for a single board cell."""
+    """Tabbed editor for a cell's question and answer slides."""
 
     def __init__(self, cell: Cell, assets_dir: str, parent=None):
         super().__init__(parent)
         self.cell = cell
         self.assets_dir = assets_dir
-        self._pending_asset_src: str = ""
         self.setWindowTitle("Edit Cell")
-        self.setMinimumSize(700, 520)
+        self.setMinimumSize(720, 580)
         self.setStyleSheet(f"background: {BG_DARK}; color: {TEXT_PRI};")
         self._build_ui()
-        self._populate()
 
     def _build_ui(self):
+        from slide_widgets import SlideEditor
         layout = QVBoxLayout(self)
 
-        form = QFormLayout()
-        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
-
-        _ef = QFont("Segoe UI", 14)
-        _ef.setFamilies(["Segoe UI", "Segoe UI Emoji", "Noto Color Emoji"])
-
-        self._question_edit = _PlainTextEdit()
-        self._question_edit.setPlaceholderText("Enter the clue / question text…")
-        self._question_edit.setFont(_ef)
-        self._question_edit.setStyleSheet(
-            f"background:{BG_MID}; color:{TEXT_PRI};"
-            f" border:1px solid {BORDER}; border-radius:5px;"
+        # Tab widget with Question / Answer tabs
+        self._tabs = QTabWidget()
+        self._tabs.setStyleSheet(
+            f"QTabWidget::pane {{ border: 1px solid {BORDER}; border-radius: 5px;"
+            f" background: {BG_DARK}; }}"
+            f"QTabBar::tab {{ background: {BG_MID}; color: {TEXT_MUT};"
+            f" padding: 8px 20px; border: 1px solid {BORDER};"
+            f" border-bottom: none; border-top-left-radius: 5px;"
+            f" border-top-right-radius: 5px; margin-right: 2px; }}"
+            f"QTabBar::tab:selected {{ background: {BG_WARM}; color: {ACCENT_HOV};"
+            f" font-weight: bold; }}"
         )
-        self._question_edit.setMinimumHeight(90)
-        form.addRow("Question:", self._question_edit)
 
-        self._answer_edit = QLineEdit()
-        self._answer_edit.setPlaceholderText("Enter the answer…")
-        self._answer_edit.setFont(_ef)
-        self._answer_edit.setStyleSheet(
-            f"background:{BG_WARM}; color:{DOLLAR_TEXT};"
-            f" border:1px solid {BORDER}; border-radius:5px; padding:5px;"
-        )
-        form.addRow("Answer:", self._answer_edit)
+        self._q_editor = SlideEditor(self.cell.question_slide, self.assets_dir, self)
+        self._a_editor = SlideEditor(self.cell.answer_slide, self.assets_dir, self)
+        self._tabs.addTab(self._q_editor, "Question")
+        self._tabs.addTab(self._a_editor, "Answer")
+        layout.addWidget(self._tabs, stretch=1)
 
-        layout.addLayout(form)
-
-        # ---- Asset area ----
-        asset_group = QGroupBox("Media Asset (optional)")
-        asset_group.setStyleSheet(
-            f"QGroupBox {{ color:{ACCENT_HOV}; font-weight:bold; font-size:13px;"
-            f" border:1px solid {BORDER}; border-radius:5px; margin-top:8px; }}"
-            f"QGroupBox::title {{ subcontrol-origin: margin; left:10px; }}"
-        )
-        asset_layout = QVBoxLayout(asset_group)
-
-        self._asset_label = QLabel("No asset")
-        self._asset_label.setStyleSheet(f"color: {TEXT_MUT}; font-style: italic; font-size: 13px;")
-        asset_layout.addWidget(self._asset_label)
-
-        btn_row = QHBoxLayout()
-        self._pick_btn = QPushButton("Browse…")
-        self._pick_btn.setStyleSheet(
-            f"QPushButton {{ background:{ACCENT_DRK}; color:{TEXT_PRI}; border-radius:5px;"
-            f" padding:6px 14px; border:1px solid {ACCENT}; }}"
-            f"QPushButton:hover {{ background:{ACCENT}; color:#111; }}"
-        )
-        self._pick_btn.clicked.connect(self._browse_asset)
-        btn_row.addWidget(self._pick_btn)
-
-        self._clear_btn = QPushButton("Clear Asset")
-        self._clear_btn.setStyleSheet(
-            f"QPushButton {{ background:#3a2828; color:{TEXT_PRI}; border-radius:5px;"
-            f" padding:6px 14px; border:1px solid #5a3838; }}"
-            f"QPushButton:hover {{ background:#503535; }}"
-        )
-        self._clear_btn.clicked.connect(self._clear_asset)
-        btn_row.addWidget(self._clear_btn)
-        btn_row.addStretch()
-        asset_layout.addLayout(btn_row)
-
-        # Preview (no controls needed in the editor)
-        self._preview = MediaWidget(auto_play=False, show_controls=False)
-        self._preview.setMinimumHeight(180)
-        self._preview.setStyleSheet(f"background:{BG_DARK}; border-radius:5px;")
-        asset_layout.addWidget(self._preview)
-
-        layout.addWidget(asset_group)
-
-        # Drag-and-drop / paste hint
-        hint = QLabel("Tip: drag & drop or paste (Ctrl+V) a media file to attach it.")
-        hint.setStyleSheet(f"color: {TEXT_MUT}; font-size: 12px;")
-        layout.addWidget(hint)
-
-        # Buttons
+        # OK / Cancel
         btns = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
@@ -224,111 +161,16 @@ class CellEditorDialog(QDialog):
         btns.setStyleSheet(f"color: {TEXT_PRI};")
         layout.addWidget(btns)
 
-        self.setAcceptDrops(True)
-
-    def _populate(self):
-        self._question_edit.setPlainText(self.cell.question)
-        self._answer_edit.setText(self.cell.answer)
-        if self.cell.asset_path:
-            full = os.path.join(self.assets_dir, self.cell.asset_path)
-            self._asset_label.setText(self.cell.asset_path)
-            self._preview.load(full, self.cell.asset_type)
-
-    # ------------------------------------------------------------------ #
-    #  Asset handling                                                       #
-    # ------------------------------------------------------------------ #
-    def _browse_asset(self):
-        path, _ = QFileDialog.getOpenFileName(
-            self, "Select Media Asset", "",
-            "Media Files (*.png *.jpg *.jpeg *.gif *.bmp *.webp *.mp4 *.webm *.mov *.mp3 *.wav *.ogg)"
-        )
-        if path:
-            self._attach_asset(path)
-
-    def _attach_asset(self, src_path: str):
-        self._pending_asset_src = src_path
-        self._asset_label.setText(os.path.basename(src_path))
-        from board import _ext_to_type
-        ext = os.path.splitext(src_path)[1].lower()
-        atype = _ext_to_type(ext)
-        self._preview.load(src_path, atype)
-
-    def _clear_asset(self):
-        self._pending_asset_src = ""
-        self.cell.asset_path = ""
-        self.cell.asset_type = ""
-        self._asset_label.setText("No asset")
-        self._preview.clear()
-
-    # ------------------------------------------------------------------ #
-    #  Drag-and-drop                                                        #
-    # ------------------------------------------------------------------ #
-    def dragEnterEvent(self, event: QDragEnterEvent):
-        if event.mimeData().hasUrls():
-            event.acceptProposedAction()
-
-    def dropEvent(self, event: QDropEvent):
-        urls = event.mimeData().urls()
-        if urls:
-            path = urls[0].toLocalFile()
-            if os.path.isfile(path):
-                self._attach_asset(path)
-
-    def eventFilter(self, obj, event):
-        """Intercept Ctrl+V — route image/file pastes to asset, let text through."""
-        if (event.type() == event.Type.KeyPress
-                and event.matches(QKeySequence.StandardKey.Paste)):
-            clipboard = QApplication.clipboard()
-            mime = clipboard.mimeData()
-            # Pasted file paths (e.g. copied from Explorer)
-            if mime.hasUrls():
-                for url in mime.urls():
-                    path = url.toLocalFile()
-                    if os.path.isfile(path):
-                        from board import _ext_to_type
-                        ext = os.path.splitext(path)[1].lower()
-                        if _ext_to_type(ext):  # only intercept known media types
-                            self._attach_asset(path)
-                            return True
-            # Pasted image data (e.g. screenshot or copied image)
-            if mime.hasImage():
-                img = clipboard.image()
-                if not img.isNull():
-                    os.makedirs(self.assets_dir, exist_ok=True)
-                    i = 1
-                    while True:
-                        dest = os.path.join(self.assets_dir, f"pasted_image_{i}.png")
-                        if not os.path.exists(dest):
-                            break
-                        i += 1
-                    img.save(dest, "PNG")
-                    self._attach_asset(dest)
-                    return True
-            # Plain text — let the focused widget handle it normally
-        return super().eventFilter(obj, event)
-
-    def showEvent(self, event):
-        super().showEvent(event)
-        # Install filter on child text widgets so we can intercept Ctrl+V
-        self._question_edit.installEventFilter(self)
-        self._answer_edit.installEventFilter(self)
-
-    # ------------------------------------------------------------------ #
-    #  Accept                                                               #
-    # ------------------------------------------------------------------ #
     def accept(self):
-        self.cell.question = self._question_edit.toPlainText().strip()
-        self.cell.answer = self._answer_edit.text().strip()
-        if self._pending_asset_src:
-            rel, atype = copy_asset_to_assets_dir(self._pending_asset_src, self.assets_dir)
-            self.cell.asset_path = rel
-            self.cell.asset_type = atype
-
-        self._preview.stop()
+        self.cell.question_slide = self._q_editor.get_slide()
+        self.cell.answer_slide = self._a_editor.get_slide()
+        self._q_editor.stop_preview()
+        self._a_editor.stop_preview()
         super().accept()
 
     def reject(self):
-        self._preview.stop()
+        self._q_editor.stop_preview()
+        self._a_editor.stop_preview()
         super().reject()
 
 
@@ -343,6 +185,7 @@ class EditMode(QWidget):
         self.board = board
         self.player_manager = player_manager
         self.assets_dir = assets_dir
+        self._save_path: str = ""
         self._category_edits: list[QLineEdit] = []
         self._value_edits: list[QLineEdit] = []   # one per row
         self._cell_buttons: list[list[QPushButton]] = []
@@ -363,12 +206,14 @@ class EditMode(QWidget):
 
         btn_new = QPushButton("New Board")
         btn_new.clicked.connect(self._on_new_board)
-        btn_save = QPushButton("Save…")
+        btn_save = QPushButton("Save")
         btn_save.clicked.connect(self._on_save)
+        btn_save_as = QPushButton("Save As…")
+        btn_save_as.clicked.connect(self._on_save_as)
         btn_load = QPushButton("Load…")
         btn_load.clicked.connect(self._on_load)
 
-        for b in (btn_new, btn_save, btn_load):
+        for b in (btn_new, btn_save, btn_save_as, btn_load):
             b.setStyleSheet(
                 f"QPushButton {{ background:{BG_MID}; color:{TEXT_PRI}; font-weight:bold;"
                 f" border-radius:5px; padding:6px 16px; border:1px solid {BORDER}; font-size:13px; }}"
@@ -543,8 +388,9 @@ class EditMode(QWidget):
         if cell.question:
             q_short = cell.question[:28] + "…" if len(cell.question) > 28 else cell.question
             parts.append(q_short)
-        if cell.asset_type:
-            parts.append(f"[{cell.asset_type}]")
+        total = len(cell.question_slide.assets) + len(cell.answer_slide.assets)
+        if total:
+            parts.append(f"[{total} asset{'s' if total != 1 else ''}]")
         return "\n".join(parts) if parts else "(empty)"
 
     # ------------------------------------------------------------------ #
@@ -588,14 +434,20 @@ class EditMode(QWidget):
             self._refresh_grid()
 
     def _on_save(self):
+        if self._save_path:
+            self.board.save(self._save_path, self.assets_dir)
+        else:
+            self._on_save_as()
+
+    def _on_save_as(self):
         path, _ = QFileDialog.getSaveFileName(
             self, "Save Board", "", "Jeopardy Board (*.json)"
         )
         if path:
             if not path.endswith(".json"):
                 path += ".json"
+            self._save_path = path
             self.board.save(path, self.assets_dir)
-            QMessageBox.information(self, "Saved", f"Board saved to:\n{path}")
 
     def _on_load(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -605,6 +457,7 @@ class EditMode(QWidget):
             try:
                 loaded = Board.load(path)
                 self.board.__dict__.update(loaded.__dict__)
+                self._save_path = path
                 self._cols_spin.setValue(self.board.num_cols)
                 self._rows_spin.setValue(self.board.num_rows)
                 self._refresh_grid()

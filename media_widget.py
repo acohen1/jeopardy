@@ -536,7 +536,12 @@ class MediaWidget(QWidget):
         self.stop()
         self._asset_type = ""
         self._stack.setCurrentIndex(0)
+        self._stack.setVisible(True)
         self._controls.setVisible(False)
+
+    def set_controls_only(self, controls_only: bool):
+        """Hide the visual area (music note / video) and show only controls."""
+        self._stack.setVisible(not controls_only)
 
     # ------------------------------------------------------------------ #
     #  Resize — rescale static image to fit                              #

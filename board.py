@@ -7,45 +7,138 @@ import json
 import os
 import shutil
 from dataclasses import dataclass, field
-from typing import Optional
 
 DEFAULT_VALUES = [200, 400, 600, 800, 1000]
 DEFAULT_COLS = 6
 DEFAULT_ROWS = 5
 
 
+# ------------------------------------------------------------------ #
+#  Slide-level data                                                   #
+# ------------------------------------------------------------------ #
 @dataclass
-class Cell:
-    """A single Jeopardy clue cell."""
-    question: str = ""
-    answer: str = ""
-    value: int = 0
-    asset_path: str = ""   # relative path inside assets/ folder
-    asset_type: str = ""   # "image", "gif", "video", "audio", or ""
-    used: bool = False
+class SlideAsset:
+    """One media file attached to a slide."""
+    path: str = ""        # relative path inside assets/ folder
+    asset_type: str = ""  # "image", "gif", "video", "audio", or ""
+    volume: float = 0.3   # 0.0–1.0, used for audio mixing
+
+    def to_dict(self) -> dict:
+        d = {"path": self.path, "asset_type": self.asset_type}
+        if self.asset_type == "audio":
+            d["volume"] = self.volume
+        return d
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "SlideAsset":
+        return cls(path=d.get("path", ""),
+                   asset_type=d.get("asset_type", ""),
+                   volume=d.get("volume", 0.3))
+
+
+@dataclass
+class Slide:
+    """One page of content (used for both question and answer)."""
+    text: str = ""
+    assets: list = field(default_factory=list)  # list[SlideAsset]
+    audio_stack: bool = False  # overlay multiple audio clips into one
 
     def to_dict(self) -> dict:
         return {
-            "question": self.question,
-            "answer": self.answer,
+            "text": self.text,
+            "assets": [a.to_dict() for a in self.assets],
+            "audio_stack": self.audio_stack,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Slide":
+        return cls(
+            text=d.get("text", ""),
+            assets=[SlideAsset.from_dict(a) for a in d.get("assets", [])],
+            audio_stack=d.get("audio_stack", False),
+        )
+
+    # -- helpers --
+    def image_assets(self) -> list[SlideAsset]:
+        return [a for a in self.assets if a.asset_type in ("image", "gif")]
+
+    def video_asset(self) -> SlideAsset | None:
+        return next((a for a in self.assets if a.asset_type == "video"), None)
+
+    def audio_assets(self) -> list[SlideAsset]:
+        return [a for a in self.assets if a.asset_type == "audio"]
+
+    def dominant_media_type(self) -> str:
+        """Which renderer to use: 'video', 'audio_image', 'audio', 'image', or ''."""
+        if self.video_asset():
+            return "video"
+        has_audio = bool(self.audio_assets())
+        has_images = bool(self.image_assets())
+        if has_audio and has_images:
+            return "audio_image"
+        if has_audio:
+            return "audio"
+        if has_images:
+            return "image"
+        return ""
+
+
+# ------------------------------------------------------------------ #
+#  Cell                                                               #
+# ------------------------------------------------------------------ #
+@dataclass
+class Cell:
+    """A single Jeopardy clue cell with question and answer slides."""
+    question_slide: Slide = field(default_factory=Slide)
+    answer_slide: Slide = field(default_factory=Slide)
+    value: int = 0
+    used: bool = False
+
+    # Convenience properties for code that just needs the text
+    @property
+    def question(self) -> str:
+        return self.question_slide.text
+
+    @property
+    def answer(self) -> str:
+        return self.answer_slide.text
+
+    def to_dict(self) -> dict:
+        return {
+            "question_slide": self.question_slide.to_dict(),
+            "answer_slide": self.answer_slide.to_dict(),
             "value": self.value,
-            "asset_path": self.asset_path,
-            "asset_type": self.asset_type,
             "used": self.used,
         }
 
     @classmethod
     def from_dict(cls, d: dict) -> "Cell":
+        # New format
+        if "question_slide" in d:
+            return cls(
+                question_slide=Slide.from_dict(d["question_slide"]),
+                answer_slide=Slide.from_dict(d.get("answer_slide", {})),
+                value=d.get("value", 0),
+                used=d.get("used", False),
+            )
+        # Legacy format — flat question/answer/asset_path/asset_type
+        q_slide = Slide(text=d.get("question", ""))
+        old_path = d.get("asset_path", "")
+        old_type = d.get("asset_type", "")
+        if old_path and old_type:
+            q_slide.assets.append(SlideAsset(path=old_path, asset_type=old_type))
+        a_slide = Slide(text=d.get("answer", ""))
         return cls(
-            question=d.get("question", ""),
-            answer=d.get("answer", ""),
+            question_slide=q_slide,
+            answer_slide=a_slide,
             value=d.get("value", 0),
-            asset_path=d.get("asset_path", ""),
-            asset_type=d.get("asset_type", ""),
             used=d.get("used", False),
         )
 
 
+# ------------------------------------------------------------------ #
+#  Board                                                              #
+# ------------------------------------------------------------------ #
 @dataclass
 class Board:
     """
@@ -138,10 +231,6 @@ class Board:
         return b
 
     def save(self, json_path: str, assets_dir: str):
-        """
-        Save board JSON. Any cell asset_path values are already relative to
-        assets_dir — nothing extra to do if assets were copied at import time.
-        """
         os.makedirs(os.path.dirname(os.path.abspath(json_path)), exist_ok=True)
         with open(json_path, "w", encoding="utf-8") as f:
             json.dump(self.to_dict(), f, indent=2, ensure_ascii=False)
@@ -153,6 +242,9 @@ class Board:
         return cls.from_dict(d)
 
 
+# ------------------------------------------------------------------ #
+#  Asset helpers                                                      #
+# ------------------------------------------------------------------ #
 def copy_asset_to_assets_dir(src_path: str, assets_dir: str) -> tuple[str, str]:
     """
     Copy a media file into assets_dir (if not already there).
