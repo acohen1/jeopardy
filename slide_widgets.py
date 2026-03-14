@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import os
 
-from PyQt6.QtCore import Qt, QEvent
+from PyQt6.QtCore import Qt, QEvent, QThread, pyqtSignal
 from PyQt6.QtGui import QPixmap, QFont, QDragEnterEvent, QDropEvent, QKeySequence
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout, QGridLayout,
@@ -136,6 +136,28 @@ class CollageWidget(QWidget):
 
 
 # ------------------------------------------------------------------ #
+#  _MixWorker — background thread for audio mixing                    #
+# ------------------------------------------------------------------ #
+class _MixWorker(QThread):
+    done  = pyqtSignal(str)   # mixed output path
+    error = pyqtSignal(str)   # error message
+
+    def __init__(self, paths: list[str], assets_dir: str, volumes: list[float]):
+        super().__init__()
+        self._paths = paths
+        self._assets_dir = assets_dir
+        self._volumes = volumes
+
+    def run(self):
+        try:
+            result = audio_utils.mix_audio_overlay(
+                self._paths, self._assets_dir, self._volumes)
+            self.done.emit(result)
+        except Exception as e:
+            self.error.emit(str(e))
+
+
+# ------------------------------------------------------------------ #
 #  SlideRenderer — play-mode display for a Slide                      #
 # ------------------------------------------------------------------ #
 class SlideRenderer(QWidget):
@@ -150,6 +172,11 @@ class SlideRenderer(QWidget):
         self._auto_play = auto_play
         self._show_controls = show_controls
         self._active_mode = ""  # "image", "video", "audio", ""
+        self._mix_worker = None
+        self._pending_audio_image = False  # whether to show collage after mix
+        self._pending_img_paths: list[str] = []
+        self._pending_fallback: str = ""
+        self._play_requested = False  # play() called while mix was in progress
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -164,6 +191,16 @@ class SlideRenderer(QWidget):
         self._media = MediaWidget(auto_play=False, show_controls=show_controls)
         self._media.setVisible(False)
         root.addWidget(self._media, stretch=1)
+
+        # Mixing overlay label (shown while background mix is running)
+        self._mixing_label = QLabel("🎵  Mixing audio clips…")
+        self._mixing_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._mixing_label.setFont(_font(16))
+        self._mixing_label.setStyleSheet(
+            f"color: {_TEXT_MUT}; background: transparent; padding: 20px;"
+        )
+        self._mixing_label.setVisible(False)
+        root.addWidget(self._mixing_label, stretch=1)
 
         # Text label
         self._text_label = QLabel()
@@ -208,26 +245,29 @@ class SlideRenderer(QWidget):
                 if slide.audio_stack and len(audio_list) > 1 and audio_utils.is_available():
                     audio_paths = [os.path.join(assets_dir, a.path) for a in audio_list]
                     volumes = [a.volume for a in audio_list]
-                    try:
-                        mixed = audio_utils.mix_audio_overlay(audio_paths, assets_dir, volumes)
-                        self._media.load(mixed, "audio")
-                    except Exception as e:
-                        print(f"[SlideRenderer] Audio mix failed, falling back: {e}")
-                        self._media.load(audio_paths[0], "audio")
+                    self._pending_fallback = audio_paths[0]
+                    self._pending_audio_image = (media_type == "audio_image")
+                    self._pending_img_paths = (
+                        [os.path.join(assets_dir, a.path) for a in slide.image_assets()]
+                        if self._pending_audio_image else []
+                    )
+                    self._mixing_label.setVisible(True)
+                    self._mix_worker = _MixWorker(audio_paths, assets_dir, volumes)
+                    self._mix_worker.done.connect(self._on_mix_done)
+                    self._mix_worker.error.connect(self._on_mix_error)
+                    self._mix_worker.start()
+                    self._active_mode = "audio"
                 else:
                     full = os.path.join(assets_dir, audio_list[0].path)
                     self._media.load(full, "audio")
-                self._media.setVisible(True)
-
-                # Audio + images: show collage instead of the music note
-                if media_type == "audio_image":
-                    img_paths = [os.path.join(assets_dir, a.path)
-                                 for a in slide.image_assets()]
-                    self._collage.load(img_paths)
-                    self._collage.setVisible(True)
-                    self._media.set_controls_only(True)
-
-                self._active_mode = "audio"
+                    self._media.setVisible(True)
+                    if media_type == "audio_image":
+                        img_paths = [os.path.join(assets_dir, a.path)
+                                     for a in slide.image_assets()]
+                        self._collage.load(img_paths)
+                        self._collage.setVisible(True)
+                        self._media.set_controls_only(True)
+                    self._active_mode = "audio"
 
         # Text
         if slide.text.strip():
@@ -236,11 +276,43 @@ class SlideRenderer(QWidget):
         else:
             self._text_label.setVisible(False)
 
+    def _on_mix_done(self, path: str):
+        self._mixing_label.setVisible(False)
+        self._media.load(path, "audio")
+        self._media.setVisible(True)
+        if self._pending_audio_image and self._pending_img_paths:
+            self._collage.load(self._pending_img_paths)
+            self._collage.setVisible(True)
+            self._media.set_controls_only(True)
+        if self._auto_play or self._play_requested:
+            self._media.play()
+        self._play_requested = False
+
+    def _on_mix_error(self, msg: str):
+        print(f"[SlideRenderer] Audio mix failed, falling back: {msg}")
+        self._mixing_label.setVisible(False)
+        self._media.load(self._pending_fallback, "audio")
+        self._media.setVisible(True)
+        if self._auto_play or self._play_requested:
+            self._media.play()
+        self._play_requested = False
+
     def play(self):
+        if self._mixing_label.isVisible():
+            self._play_requested = True
+            return
         if self._active_mode in ("video", "audio"):
             self._media.play()
 
     def stop(self):
+        if self._mix_worker and self._mix_worker.isRunning():
+            self._mix_worker.done.disconnect()
+            self._mix_worker.error.disconnect()
+            self._mix_worker.quit()
+            self._mix_worker.wait()
+            self._mix_worker = None
+        self._mixing_label.setVisible(False)
+        self._play_requested = False
         self._media.stop()
 
     def clear(self):
