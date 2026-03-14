@@ -7,6 +7,10 @@ REM ============================================================
 echo [BUILD] Installing / upgrading requirements...
 pip install -r requirements.txt
 
+echo [BUILD] Cleaning previous build...
+if exist build rmdir /s /q build
+if exist dist rmdir /s /q dist
+
 echo [BUILD] Running PyInstaller...
 pyinstaller ^
     --name "Chaewon Jeopardy" ^
@@ -14,7 +18,6 @@ pyinstaller ^
     --onedir ^
     --icon "icon.ico" ^
     --add-data "icon.ico;." ^
-    --add-data "assets;assets" ^
     --collect-all PyQt6 ^
     main.py
 

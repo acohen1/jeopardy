@@ -40,7 +40,7 @@ HEADER_STYLE = f"""
     QLineEdit {{
         background: {BG_WARM};
         color: {TEXT_PRI};
-        font-family: 'Segoe UI', 'Segoe UI Emoji', 'Noto Color Emoji';
+        font-family: 'Segoe UI', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
         font-size: 15px;
         font-weight: bold;
         border: 1px solid {BORDER};

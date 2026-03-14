@@ -17,7 +17,7 @@ from board import Board, Cell
 from players import PlayerManager
 from media_widget import MediaWidget
 
-_EMOJI_FAMILIES = ["Segoe UI", "Segoe UI Emoji", "Noto Color Emoji"]
+_EMOJI_FAMILIES = ["Segoe UI", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"]
 
 def _font(size: int, bold: bool = False) -> QFont:
     """Create a QFont with emoji fallback support."""
@@ -54,7 +54,7 @@ CATEGORY_STYLE = f"""
     QLabel {{
         background: {CAT_BG};
         color: {TEXT_PRI};
-        font-family: 'Segoe UI', 'Segoe UI Emoji', 'Noto Color Emoji';
+        font-family: 'Segoe UI', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
         font-size: 16px;
         font-weight: bold;
         border: 1px solid {BORDER};

@@ -147,7 +147,7 @@ def main():
 
     # Global font — slightly larger base, with emoji fallback
     font = QFont("Segoe UI", 11)
-    font.setFamilies(["Segoe UI", "Segoe UI Emoji", "Noto Color Emoji"])
+    font.setFamilies(["Segoe UI", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"])
     app.setFont(font)
 
     # Dark warm-grey palette
