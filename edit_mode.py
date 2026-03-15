@@ -11,13 +11,13 @@ from __future__ import annotations
 import os
 
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QCursor, QFont
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QScrollArea,
     QPushButton, QLabel, QLineEdit, QSpinBox, QFileDialog,
     QDialog, QDialogButtonBox, QFormLayout, QMessageBox, QGroupBox,
     QListWidget, QListWidgetItem, QInputDialog, QSizePolicy, QFrame,
-    QTabWidget,
+    QTabWidget, QMenu,
 )
 
 from board import Board, Cell
@@ -379,6 +379,10 @@ class EditMode(QWidget):
                 btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
                 btn.setMinimumSize(100, 55)
                 btn.clicked.connect(lambda _, row=r, col=c: self._open_cell_editor(row, col))
+                btn.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+                btn.customContextMenuRequested.connect(
+                    lambda _, row=r, col=c: self._on_cell_right_clicked(row, col)
+                )
                 self._grid_layout.addWidget(btn, r + 1, c + 1)
                 row_buttons.append(btn)
             self._cell_buttons.append(row_buttons)
@@ -408,6 +412,40 @@ class EditMode(QWidget):
                 self.board.cells[row][c].value = val
         except ValueError:
             pass
+
+    def _on_cell_right_clicked(self, row: int, col: int):
+        _menu_style = (
+            f"QMenu {{ background:{BG_MID}; color:{TEXT_PRI}; border:1px solid {BORDER};"
+            f" font-size:14px; padding:4px; }}"
+            f"QMenu::item {{ padding:8px 20px; border-radius:4px; }}"
+            f"QMenu::item:selected {{ background:{ACCENT}; }}"
+            f"QMenu::separator {{ height:1px; background:{BORDER}; margin:4px 8px; }}"
+        )
+        menu = QMenu(self)
+        menu.setStyleSheet(_menu_style)
+
+        swap_menu = menu.addMenu("Swap With…")
+        swap_menu.setStyleSheet(_menu_style)
+        swap_actions = {}
+        for r in range(self.board.num_rows):
+            if r == row:
+                continue
+            other = self.board.cells[r][col]
+            label = f"Row {r + 1}  (${other.value:,})"
+            act = swap_menu.addAction(label)
+            swap_actions[act] = r
+
+        action = menu.exec(QCursor.pos())
+        if action in swap_actions:
+            self._swap_cells(row, swap_actions[action], col)
+
+    def _swap_cells(self, row_a: int, row_b: int, col: int):
+        a = self.board.cells[row_a][col]
+        b = self.board.cells[row_b][col]
+        a.question_slide, b.question_slide = b.question_slide, a.question_slide
+        a.answer_slide, b.answer_slide = b.answer_slide, a.answer_slide
+        self._cell_buttons[row_a][col].setText(self._cell_label(a))
+        self._cell_buttons[row_b][col].setText(self._cell_label(b))
 
     def _open_cell_editor(self, row: int, col: int):
         cell = self.board.cells[row][col]
