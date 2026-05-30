@@ -268,24 +268,19 @@ class SlideGrid(QWidget):
 
     def _place_third_of_three(self, cell: "_GridCell", row, col, rs, cs):
         """The 3rd of 3 items spans the bottom row, centered at half width
-        (matching the image-collage look)."""
-        if cell.kind in ("image", "gif"):
-            # the QLabel centers its half-scaled pixmap
-            self._grid.addWidget(cell.container, row, col, rs, cs,
-                                 Qt.AlignmentFlag.AlignCenter)
-        else:
-            # a *filling* media widget must be constrained to ~half width,
-            # so wrap it with stretches (AlignCenter would size it to its
-            # unreliable size hint instead).
-            wrapper = QWidget()
-            hb = QHBoxLayout(wrapper)
-            hb.setContentsMargins(0, 0, 0, 0)
-            hb.setSpacing(0)
-            hb.addStretch(1)
-            hb.addWidget(cell.container, 2)
-            hb.addStretch(1)
-            cell.wrapper = wrapper
-            self._grid.addWidget(wrapper, row, col, rs, cs)
+        (matching the image-collage look). Every cell type is wrapped with
+        stretches so the half-width sizing never depends on a content size
+        hint — AlignCenter would size a video to its unreliable hint, and an
+        image to its pixmap (which drives a layout feedback loop)."""
+        wrapper = QWidget()
+        hb = QHBoxLayout(wrapper)
+        hb.setContentsMargins(0, 0, 0, 0)
+        hb.setSpacing(0)
+        hb.addStretch(1)
+        hb.addWidget(cell.container, 2)
+        hb.addStretch(1)
+        cell.wrapper = wrapper
+        self._grid.addWidget(wrapper, row, col, rs, cs)
 
     def _apply_stretch(self, n: int):
         """Give every used row/column equal stretch so cells divide the area
@@ -361,6 +356,12 @@ class SlideGrid(QWidget):
         label = QLabel()
         label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         label.setStyleSheet("background: transparent; border: none;")
+        # Fill the cell but never let the pixmap drive the layout: a pixmap
+        # QLabel's minimumSizeHint tracks the pixmap, which would ratchet the
+        # window larger each layout pass (infinite zoom). Ignored policy makes
+        # the layout use minimumSize (1px) instead of that hint.
+        label.setMinimumSize(1, 1)
+        label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
         lay.addWidget(label)
         cell.container = container
         cell.label = label
