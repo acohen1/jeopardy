@@ -9,11 +9,11 @@ from __future__ import annotations
 
 import os
 
-from PyQt6.QtCore import Qt, QEvent, QThread, pyqtSignal
-from PyQt6.QtGui import QPixmap, QFont, QDragEnterEvent, QDropEvent, QKeySequence
+from PyQt6.QtCore import Qt, QEvent, QThread, pyqtSignal, QSize
+from PyQt6.QtGui import QPixmap, QMovie, QFont, QDragEnterEvent, QDropEvent, QKeySequence
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout, QGridLayout,
-    QPushButton, QTextEdit, QCheckBox,
+    QPushButton, QTextEdit, QCheckBox, QFrame, QStackedWidget,
     QFileDialog, QMessageBox, QSizePolicy, QAbstractItemView, QSlider,
     QTableWidget, QTableWidgetItem, QHeaderView,
 )
@@ -32,6 +32,11 @@ _ACCENT_D = "#5a8a6a"
 _TEXT_PRI  = "#e5ddd5"
 _TEXT_MUT  = "#9a9080"
 _BORDER   = "#505050"
+
+# Active-cell border for media items in a SlideGrid (constant 2px width so
+# toggling the colour never reflows the layout).
+_CELL_QSS     = "QFrame#slideCell { border: 2px solid transparent; border-radius: 4px; }"
+_CELL_QSS_ACT = f"QFrame#slideCell {{ border: 2px solid {_ACCENT}; border-radius: 4px; }}"
 
 _EMOJI_FAMILIES = ["Segoe UI", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"]
 
@@ -158,12 +163,464 @@ class _MixWorker(QThread):
 
 
 # ------------------------------------------------------------------ #
+#  Collage placement helpers (shared by CollageWidget & SlideGrid)    #
+# ------------------------------------------------------------------ #
+def grid_positions(n: int) -> list[tuple[int, int, int, int]]:
+    """(row, col, rowspan, colspan) for each of n cells (1-4), mirroring
+    CollageWidget.load()'s arrangement (incl. the centered 1x2 span for
+    the 3rd of 3)."""
+    if n <= 1:
+        return [(0, 0, 1, 1)]
+    if n == 2:
+        return [(0, 0, 1, 1), (0, 1, 1, 1)]
+    if n == 3:
+        return [(0, 0, 1, 1), (0, 1, 1, 1), (1, 0, 1, 2)]
+    return [(0, 0, 1, 1), (0, 1, 1, 1), (1, 0, 1, 1), (1, 1, 1, 1)]
+
+
+def cell_target_size(n: int, w: int, h: int) -> tuple[int, int]:
+    """Target (width, height) for each cell given n cells in a w x h area,
+    mirroring CollageWidget._fit_all (the 3rd of 3 is sized to a half-cell
+    and centered)."""
+    if n <= 1:
+        return w, h
+    if n == 2:
+        return w // 2 - 2, h
+    return w // 2 - 2, h // 2 - 2
+
+
+# ------------------------------------------------------------------ #
+#  SlideGrid — 1-4 mixed media items, each video/audio self-controlled #
+# ------------------------------------------------------------------ #
+class _GridCell:
+    """Bookkeeping for one cell placed in a SlideGrid."""
+
+    def __init__(self, kind: str):
+        self.kind = kind            # "image" | "gif" | "video" | "audio"
+        self.asset_index = -1       # index into the slide's assets list
+        self.container: QFrame | None = None  # frame that gets the active border
+        self.wrapper = None         # optional centering wrapper (3rd of 3)
+        self.media = None           # MediaWidget (video/audio) or None
+        self.label: QLabel | None = None      # QLabel (image/gif) or None
+        self.pixmap: QPixmap | None = None    # raw pixmap (image)
+        self.movie: QMovie | None = None      # QMovie (gif)
+        self.gif_native: QSize | None = None  # native gif frame size
+        # stacked-audio specifics
+        self.is_stacked = False
+        self.mixing = False
+        self.play_requested = False
+        self.worker = None
+        self.stack: QStackedWidget | None = None
+        self.stack_fallback = ""
+
+    @property
+    def is_timed(self) -> bool:
+        return self.kind in ("video", "audio")
+
+
+class SlideGrid(QWidget):
+    """
+    Lays out 1-4 media items (any mix of image / gif / video / audio) in the
+    same arrangement as the image collage. Images/gifs are lightweight labels;
+    video and audio are MediaWidgets with their own compact transport bar.
+
+    A single app-level key filter routes hotkeys (Space, Left/Right, F, R) to
+    the most-recently-focused ("active") timed cell. Nothing auto-plays —
+    play() only starts gif animation.
+    """
+
+    def __init__(self, parent=None, show_controls: bool = True):
+        super().__init__(parent)
+        self._show_controls = show_controls
+        self._cells: list[_GridCell] = []
+        self._active_cell: _GridCell | None = None
+        self._multi_timed = False
+        self._key_filter_app = None
+        self._suspend_hotkeys = False
+
+        self._grid = QGridLayout(self)
+        self._grid.setContentsMargins(0, 0, 0, 0)
+        self._grid.setSpacing(4)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+
+    # ---- build ----
+    def load(self, assets: list, assets_dir: str, audio_stack: bool):
+        self.clear()
+        specs = self._build_cell_specs(assets, audio_stack)[:4]
+        n = len(specs)
+        positions = grid_positions(n)
+        for i, (spec, pos) in enumerate(zip(specs, positions)):
+            cell = self._create_cell(spec, assets_dir)
+            self._cells.append(cell)
+            row, col, rs, cs = pos
+            if n == 3 and i == 2:
+                self._place_third_of_three(cell, row, col, rs, cs)
+            else:
+                self._grid.addWidget(cell.container, row, col, rs, cs)
+        self._apply_stretch(n)
+
+        timed = [c for c in self._cells if c.is_timed]
+        self._multi_timed = len(timed) >= 2
+        if timed:
+            self._set_active_cell(timed[0])
+        self._fit_static()
+        self._maybe_install_filter()
+
+    def _place_third_of_three(self, cell: "_GridCell", row, col, rs, cs):
+        """The 3rd of 3 items spans the bottom row, centered at half width
+        (matching the image-collage look)."""
+        if cell.kind in ("image", "gif"):
+            # the QLabel centers its half-scaled pixmap
+            self._grid.addWidget(cell.container, row, col, rs, cs,
+                                 Qt.AlignmentFlag.AlignCenter)
+        else:
+            # a *filling* media widget must be constrained to ~half width,
+            # so wrap it with stretches (AlignCenter would size it to its
+            # unreliable size hint instead).
+            wrapper = QWidget()
+            hb = QHBoxLayout(wrapper)
+            hb.setContentsMargins(0, 0, 0, 0)
+            hb.setSpacing(0)
+            hb.addStretch(1)
+            hb.addWidget(cell.container, 2)
+            hb.addStretch(1)
+            cell.wrapper = wrapper
+            self._grid.addWidget(wrapper, row, col, rs, cs)
+
+    def _apply_stretch(self, n: int):
+        """Give every used row/column equal stretch so cells divide the area
+        evenly from the first layout pass — independent of each media widget's
+        (late-arriving) size hint."""
+        if n <= 1:
+            cols, rows = 1, 1
+        elif n == 2:
+            cols, rows = 2, 1
+        else:
+            cols, rows = 2, 2
+        for c in (0, 1):
+            self._grid.setColumnStretch(c, 1 if c < cols else 0)
+        for r in (0, 1):
+            self._grid.setRowStretch(r, 1 if r < rows else 0)
+
+    def _build_cell_specs(self, assets: list, audio_stack: bool) -> list[dict]:
+        """Resolve the ordered asset list into per-cell specs. Audio items
+        collapse into one stacked cell (at the first audio's slot) when
+        stacking is on and possible."""
+        audios = [a for a in assets if a.asset_type == "audio"]
+        do_stack = (audio_stack and len(audios) >= 2 and audio_utils.is_available())
+        specs: list[dict] = []
+        stacked_inserted = False
+        for i, a in enumerate(assets):
+            if a.asset_type == "audio":
+                if do_stack:
+                    if not stacked_inserted:
+                        specs.append({
+                            "kind": "audio", "stacked": True, "asset_index": i,
+                            "paths": [x.path for x in audios],
+                            "volumes": [x.volume for x in audios],
+                        })
+                        stacked_inserted = True
+                    continue  # other audios fold into the stacked cell
+                specs.append({"kind": "audio", "stacked": False,
+                              "asset_index": i, "path": a.path})
+            elif a.asset_type in ("image", "gif", "video"):
+                spec = {"kind": a.asset_type, "asset_index": i, "path": a.path}
+                if a.asset_type == "video":
+                    spec["volume"] = a.volume
+                specs.append(spec)
+            # unknown/empty asset types are skipped
+        return specs
+
+    def _create_cell(self, spec: dict, assets_dir: str) -> _GridCell:
+        kind = spec["kind"]
+        if kind in ("image", "gif"):
+            cell = self._create_image_cell(kind, os.path.join(assets_dir, spec["path"]))
+        elif kind == "video":
+            cell = self._create_media_cell(
+                "video", os.path.join(assets_dir, spec["path"]),
+                volume=spec.get("volume"))
+        elif spec.get("stacked"):
+            cell = self._create_stacked_audio_cell(spec, assets_dir)
+        else:
+            cell = self._create_media_cell("audio", os.path.join(assets_dir, spec["path"]))
+        cell.asset_index = spec.get("asset_index", -1)
+        return cell
+
+    def _new_container(self) -> tuple[QFrame, QVBoxLayout]:
+        container = QFrame()
+        container.setObjectName("slideCell")
+        container.setStyleSheet(_CELL_QSS)
+        lay = QVBoxLayout(container)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+        return container, lay
+
+    def _create_image_cell(self, kind: str, full_path: str) -> _GridCell:
+        cell = _GridCell(kind)
+        container, lay = self._new_container()
+        label = QLabel()
+        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        label.setStyleSheet("background: transparent; border: none;")
+        lay.addWidget(label)
+        cell.container = container
+        cell.label = label
+        if kind == "gif":
+            movie = QMovie(full_path)
+            if movie.isValid():
+                cell.movie = movie
+                movie.jumpToFrame(0)
+                img = movie.currentImage()
+                cell.gif_native = img.size() if not img.isNull() else None
+                label.setMovie(movie)
+                movie.start()
+                return cell
+            cell.kind = "image"  # fall back to a static first frame
+        px = QPixmap(full_path)
+        cell.pixmap = px if not px.isNull() else None
+        return cell
+
+    def _wire_media(self, media, cell: _GridCell):
+        media.activated.connect(lambda c=cell: self._set_active_cell(c))
+        media.fullscreen_opened.connect(self._on_fs_opened)
+        media.fullscreen_closed.connect(self._on_fs_closed)
+
+    def _create_media_cell(self, kind: str, full_path: str,
+                           volume: float | None = None) -> _GridCell:
+        cell = _GridCell(kind)
+        container, lay = self._new_container()
+        media = MediaWidget(auto_play=False, show_controls=self._show_controls,
+                            manage_hotkeys=False, compact_controls=True)
+        media.load(full_path, kind)
+        if volume is not None:
+            media.set_volume(int(volume * 100))
+        self._wire_media(media, cell)
+        lay.addWidget(media)
+        cell.container = container
+        cell.media = media
+        return cell
+
+    def _create_stacked_audio_cell(self, spec: dict, assets_dir: str) -> _GridCell:
+        cell = _GridCell("audio")
+        cell.is_stacked = True
+        container, lay = self._new_container()
+
+        stack = QStackedWidget()
+        mixing = QLabel("🎵  Mixing audio clips…")
+        mixing.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        mixing.setFont(_font(14))
+        mixing.setStyleSheet(f"color: {_TEXT_MUT}; background: transparent; border: none;")
+        stack.addWidget(mixing)            # index 0
+
+        media = MediaWidget(auto_play=False, show_controls=self._show_controls,
+                            manage_hotkeys=False, compact_controls=True)
+        self._wire_media(media, cell)
+        stack.addWidget(media)             # index 1
+        stack.setCurrentIndex(0)
+        lay.addWidget(stack)
+
+        cell.container = container
+        cell.media = media
+        cell.stack = stack
+        cell.mixing = True
+
+        paths = [os.path.join(assets_dir, p) for p in spec["paths"]]
+        cell.stack_fallback = paths[0]
+        worker = _MixWorker(paths, assets_dir, spec["volumes"])
+        worker.done.connect(lambda out, c=cell: self._on_stack_done(c, out))
+        worker.error.connect(lambda msg, c=cell: self._on_stack_error(c, msg))
+        cell.worker = worker
+        worker.start()
+        return cell
+
+    def _on_stack_done(self, cell: _GridCell, out_path: str):
+        cell.mixing = False
+        cell.worker = None
+        cell.media.load(out_path, "audio")
+        if cell.stack is not None:
+            cell.stack.setCurrentIndex(1)
+        if cell.play_requested:
+            cell.play_requested = False
+            cell.media.play()
+
+    def _on_stack_error(self, cell: _GridCell, msg: str):
+        print(f"[SlideGrid] Audio mix failed, falling back: {msg}")
+        cell.mixing = False
+        cell.worker = None
+        cell.media.load(cell.stack_fallback, "audio")
+        if cell.stack is not None:
+            cell.stack.setCurrentIndex(1)
+        if cell.play_requested:
+            cell.play_requested = False
+            cell.media.play()
+
+    # ---- active cell & hotkeys ----
+    def _set_active_cell(self, cell: _GridCell | None):
+        if cell is self._active_cell:
+            return
+        if (self._active_cell is not None
+                and self._active_cell.container is not None):
+            try:
+                self._active_cell.container.setStyleSheet(_CELL_QSS)
+            except RuntimeError:
+                pass
+        self._active_cell = cell
+        # The accent border only matters for hotkey focus (play mode). Skip it
+        # in non-interactive contexts like the editor preview.
+        if (cell is not None and cell.container is not None
+                and self._multi_timed and self._show_controls):
+            cell.container.setStyleSheet(_CELL_QSS_ACT)
+
+    def _toggle_active(self):
+        c = self._active_cell
+        if c is None:
+            return
+        if c.is_stacked and c.mixing:
+            c.play_requested = not c.play_requested  # queue until mix done
+            return
+        if c.media is not None:
+            c.media.toggle_play_pause()
+
+    def _on_fs_opened(self):
+        self._suspend_hotkeys = True
+
+    def _on_fs_closed(self):
+        self._suspend_hotkeys = False
+
+    def _maybe_install_filter(self):
+        if (not self._show_controls
+                or self._key_filter_app is not None
+                or not self.isVisible()):
+            return
+        if not any(c.is_timed for c in self._cells):
+            return
+        app = QApplication.instance()
+        if app is not None:
+            app.installEventFilter(self)
+            self._key_filter_app = app
+
+    def _remove_filter(self):
+        if self._key_filter_app is not None:
+            try:
+                self._key_filter_app.removeEventFilter(self)
+            except RuntimeError:
+                pass
+            self._key_filter_app = None
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._maybe_install_filter()
+        self._fit_static()
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        self._remove_filter()
+
+    def eventFilter(self, obj, event):
+        if (not self._suspend_hotkeys
+                and event.type() == QEvent.Type.KeyPress
+                and self._active_cell is not None
+                and self._active_cell.is_timed):
+            key = event.key()
+            c = self._active_cell
+            if key == Qt.Key.Key_Left:
+                if c.media is not None:
+                    c.media.seek_relative(-1000)
+                return True
+            if key == Qt.Key.Key_Right:
+                if c.media is not None:
+                    c.media.seek_relative(1000)
+                return True
+            if key == Qt.Key.Key_Space:
+                self._toggle_active()
+                return True
+            if key == Qt.Key.Key_R:
+                if c.media is not None:
+                    c.media.restart()
+                return True
+            if key == Qt.Key.Key_F:
+                if c.media is not None and c.media.is_video:
+                    c.media.toggle_fullscreen()
+                    return True
+        return super().eventFilter(obj, event)
+
+    def media_for_asset_index(self, idx: int):
+        """The MediaWidget for the cell built from assets[idx], or None."""
+        for c in self._cells:
+            if c.asset_index == idx and c.media is not None:
+                return c.media
+        return None
+
+    # ---- playback ----
+    def play(self):
+        # Nothing auto-plays: only gif animation is (re)started here.
+        for c in self._cells:
+            if c.movie is not None:
+                c.movie.start()
+
+    def stop(self):
+        for c in self._cells:
+            if c.movie is not None:
+                c.movie.stop()
+            if c.media is not None:
+                c.media.stop()
+            if c.worker is not None:
+                try:
+                    c.worker.done.disconnect()
+                    c.worker.error.disconnect()
+                except (RuntimeError, TypeError):
+                    pass
+                c.worker.quit()
+                c.worker.wait()
+                c.worker = None
+                c.mixing = False
+
+    def clear(self):
+        self.stop()
+        self._remove_filter()
+        for c in self._cells:
+            if c.media is not None:
+                c.media.force_close_fullscreen()
+        self._cells = []
+        self._active_cell = None
+        self._multi_timed = False
+        while self._grid.count():
+            item = self._grid.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.setParent(None)
+                w.deleteLater()
+
+    # ---- sizing ----
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._fit_static()
+
+    def _fit_static(self):
+        n = len(self._cells)
+        if n == 0:
+            return
+        tw, th = cell_target_size(n, self.width(), self.height())
+        target = QSize(max(tw, 1), max(th, 1))
+        for c in self._cells:
+            if c.pixmap is not None and c.label is not None:
+                c.label.setPixmap(c.pixmap.scaled(
+                    target, Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation))
+            elif c.movie is not None:
+                if c.gif_native is not None and c.gif_native.width() > 0:
+                    c.movie.setScaledSize(c.gif_native.scaled(
+                        target, Qt.AspectRatioMode.KeepAspectRatio))
+                else:
+                    c.movie.setScaledSize(target)
+
+
+# ------------------------------------------------------------------ #
 #  SlideRenderer — play-mode display for a Slide                      #
 # ------------------------------------------------------------------ #
 class SlideRenderer(QWidget):
     """
-    Renders a Slide for gameplay: collage for images, MediaWidget for
-    video/audio, optional text label at the bottom.
+    Renders a Slide for gameplay: a 1-4 item SlideGrid (any mix of
+    image / gif / video / audio) plus an optional text label.
     """
 
     def __init__(self, auto_play: bool = True, show_controls: bool = True,
@@ -171,36 +628,15 @@ class SlideRenderer(QWidget):
         super().__init__(parent)
         self._auto_play = auto_play
         self._show_controls = show_controls
-        self._active_mode = ""  # "image", "video", "audio", ""
-        self._mix_worker = None
-        self._pending_audio_image = False  # whether to show collage after mix
-        self._pending_img_paths: list[str] = []
-        self._pending_fallback: str = ""
-        self._play_requested = False  # play() called while mix was in progress
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(6)
 
-        # Collage (for images)
-        self._collage = CollageWidget()
-        self._collage.setVisible(False)
-        root.addWidget(self._collage, stretch=1)
-
-        # MediaWidget (for video / audio)
-        self._media = MediaWidget(auto_play=False, show_controls=show_controls)
-        self._media.setVisible(False)
-        root.addWidget(self._media, stretch=1)
-
-        # Mixing overlay label (shown while background mix is running)
-        self._mixing_label = QLabel("🎵  Mixing audio clips…")
-        self._mixing_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._mixing_label.setFont(_font(16))
-        self._mixing_label.setStyleSheet(
-            f"color: {_TEXT_MUT}; background: transparent; padding: 20px;"
-        )
-        self._mixing_label.setVisible(False)
-        root.addWidget(self._mixing_label, stretch=1)
+        # Media grid (any mix of images / gifs / videos / audio)
+        self._grid = SlideGrid(show_controls=show_controls)
+        self._grid.setVisible(False)
+        root.addWidget(self._grid, stretch=1)
 
         # Text label
         self._text_label = QLabel()
@@ -216,58 +652,8 @@ class SlideRenderer(QWidget):
     def load_slide(self, slide: Slide, assets_dir: str):
         """Display the slide content."""
         self.stop()
-        self._collage.clear()
-        self._collage.setVisible(False)
-        self._media.clear()
-        self._media.setVisible(False)
-        self._active_mode = ""
-
-        media_type = slide.dominant_media_type()
-
-        if media_type == "image":
-            paths = [os.path.join(assets_dir, a.path) for a in slide.image_assets()]
-            if paths:
-                self._collage.load(paths)
-                self._collage.setVisible(True)
-                self._active_mode = "image"
-
-        elif media_type == "video":
-            va = slide.video_asset()
-            if va:
-                full = os.path.join(assets_dir, va.path)
-                self._media.load(full, "video")
-                self._media.setVisible(True)
-                self._active_mode = "video"
-
-        elif media_type in ("audio", "audio_image"):
-            audio_list = slide.audio_assets()
-            if audio_list:
-                if slide.audio_stack and len(audio_list) > 1 and audio_utils.is_available():
-                    audio_paths = [os.path.join(assets_dir, a.path) for a in audio_list]
-                    volumes = [a.volume for a in audio_list]
-                    self._pending_fallback = audio_paths[0]
-                    self._pending_audio_image = (media_type == "audio_image")
-                    self._pending_img_paths = (
-                        [os.path.join(assets_dir, a.path) for a in slide.image_assets()]
-                        if self._pending_audio_image else []
-                    )
-                    self._mixing_label.setVisible(True)
-                    self._mix_worker = _MixWorker(audio_paths, assets_dir, volumes)
-                    self._mix_worker.done.connect(self._on_mix_done)
-                    self._mix_worker.error.connect(self._on_mix_error)
-                    self._mix_worker.start()
-                    self._active_mode = "audio"
-                else:
-                    full = os.path.join(assets_dir, audio_list[0].path)
-                    self._media.load(full, "audio")
-                    self._media.setVisible(True)
-                    if media_type == "audio_image":
-                        img_paths = [os.path.join(assets_dir, a.path)
-                                     for a in slide.image_assets()]
-                        self._collage.load(img_paths)
-                        self._collage.setVisible(True)
-                        self._media.set_controls_only(True)
-                    self._active_mode = "audio"
+        self._grid.load(slide.assets, assets_dir, slide.audio_stack)
+        self._grid.setVisible(bool(slide.assets))
 
         # Text
         if slide.text.strip():
@@ -276,53 +662,19 @@ class SlideRenderer(QWidget):
         else:
             self._text_label.setVisible(False)
 
-    def _on_mix_done(self, path: str):
-        self._mixing_label.setVisible(False)
-        self._media.load(path, "audio")
-        self._media.setVisible(True)
-        if self._pending_audio_image and self._pending_img_paths:
-            self._collage.load(self._pending_img_paths)
-            self._collage.setVisible(True)
-            self._media.set_controls_only(True)
-        if self._auto_play or self._play_requested:
-            self._media.play()
-        self._play_requested = False
-
-    def _on_mix_error(self, msg: str):
-        print(f"[SlideRenderer] Audio mix failed, falling back: {msg}")
-        self._mixing_label.setVisible(False)
-        self._media.load(self._pending_fallback, "audio")
-        self._media.setVisible(True)
-        if self._auto_play or self._play_requested:
-            self._media.play()
-        self._play_requested = False
-
     def play(self):
-        if self._mixing_label.isVisible():
-            self._play_requested = True
-            return
-        if self._active_mode in ("video", "audio"):
-            self._media.play()
+        self._grid.play()
 
     def stop(self):
-        if self._mix_worker and self._mix_worker.isRunning():
-            self._mix_worker.done.disconnect()
-            self._mix_worker.error.disconnect()
-            self._mix_worker.quit()
-            self._mix_worker.wait()
-            self._mix_worker = None
-        self._mixing_label.setVisible(False)
-        self._play_requested = False
-        self._media.stop()
+        self._grid.stop()
+
+    def media_for_asset_index(self, idx: int):
+        return self._grid.media_for_asset_index(idx)
 
     def clear(self):
-        self.stop()
-        self._collage.clear()
-        self._collage.setVisible(False)
-        self._media.clear()
-        self._media.setVisible(False)
+        self._grid.clear()
+        self._grid.setVisible(False)
         self._text_label.setVisible(False)
-        self._active_mode = ""
 
 
 # ------------------------------------------------------------------ #
@@ -401,6 +753,8 @@ class SlideEditor(QWidget):
         self._preview_player = None
         self._preview_audio_out = None
         self._preview_playing_idx = -1
+        # Video preview is driven through the preview pane's MediaWidget
+        self._video_preview_idx = -1
 
         # Asset buttons
         btn_row = QHBoxLayout()
@@ -424,6 +778,26 @@ class SlideEditor(QWidget):
         self._remove_btn.clicked.connect(self._on_remove_asset)
         btn_row.addWidget(self._remove_btn)
 
+        # Reorder buttons — list order drives the on-screen grid position
+        _reorder_qss = (
+            f"QPushButton {{ background:{_BG_MID}; color:{_TEXT_PRI}; border-radius:5px;"
+            f" padding:5px 10px; border:1px solid {_BORDER}; }}"
+            f"QPushButton:hover {{ background:#3a3a3a; color:{_ACCENT_H}; }}"
+        )
+        self._up_btn = QPushButton("▲")
+        self._up_btn.setToolTip("Move selected item earlier (up / left)")
+        self._up_btn.setFixedWidth(36)
+        self._up_btn.setStyleSheet(_reorder_qss)
+        self._up_btn.clicked.connect(lambda: self._move_asset(-1))
+        btn_row.addWidget(self._up_btn)
+
+        self._down_btn = QPushButton("▼")
+        self._down_btn.setToolTip("Move selected item later (down / right)")
+        self._down_btn.setFixedWidth(36)
+        self._down_btn.setStyleSheet(_reorder_qss)
+        self._down_btn.clicked.connect(lambda: self._move_asset(1))
+        btn_row.addWidget(self._down_btn)
+
         btn_row.addStretch()
 
         # Audio stacking checkbox
@@ -433,6 +807,7 @@ class SlideEditor(QWidget):
             "Overlay multiple audio clips into a single mixed track"
         )
         self._stack_check.setVisible(False)
+        self._stack_check.toggled.connect(self._refresh_preview)
         btn_row.addWidget(self._stack_check)
 
         layout.addLayout(btn_row)
@@ -456,8 +831,9 @@ class SlideEditor(QWidget):
 
     def _refresh_asset_list(self):
         self._stop_audio_preview()
+        self._video_preview_idx = -1
         self._asset_table.setRowCount(0)
-        has_any_audio = False
+        has_timed = False
         for idx, a in enumerate(self._pending_assets):
             row = self._asset_table.rowCount()
             self._asset_table.insertRow(row)
@@ -467,8 +843,9 @@ class SlideEditor(QWidget):
             self._asset_table.setItem(row, 0,
                                       QTableWidgetItem(f"[{tag}] {a.path}"))
 
-            if a.asset_type == "audio":
-                has_any_audio = True
+            if a.asset_type in ("audio", "video"):
+                has_timed = True
+                is_video = (a.asset_type == "video")
                 # Column 1: volume slider + percentage
                 vol_widget = QWidget()
                 vol_layout = QHBoxLayout(vol_widget)
@@ -494,19 +871,23 @@ class SlideEditor(QWidget):
                 pct_label.setAlignment(Qt.AlignmentFlag.AlignRight
                                        | Qt.AlignmentFlag.AlignVCenter)
 
-                def _make_vol_handler(i, sl, pl):
+                def _make_vol_handler(i, sl, pl, vid):
                     def handler(val):
                         self._pending_assets[i].volume = val / 100.0
                         sl.setToolTip(f"Volume: {val}%")
                         pl.setText(f"{val}%")
-                        # Update live playback volume if this track is playing
-                        if (self._preview_playing_idx == i
+                        # Update live playback volume
+                        if vid:
+                            mw = self._preview.media_for_asset_index(i)
+                            if mw is not None:
+                                mw.set_volume(val)
+                        elif (self._preview_playing_idx == i
                                 and self._preview_audio_out is not None):
                             self._preview_audio_out.setVolume(val / 100.0)
                     return handler
 
                 slider.valueChanged.connect(
-                    _make_vol_handler(idx, slider, pct_label))
+                    _make_vol_handler(idx, slider, pct_label, is_video))
                 vol_layout.addWidget(slider, stretch=1)
                 vol_layout.addWidget(pct_label)
                 self._asset_table.setCellWidget(row, 1, vol_widget)
@@ -514,7 +895,8 @@ class SlideEditor(QWidget):
                 # Column 2: play/pause button
                 play_btn = QPushButton("\u25b6")  # ▶
                 play_btn.setFixedSize(24, 24)
-                play_btn.setToolTip("Preview this track")
+                play_btn.setToolTip("Preview this video" if is_video
+                                    else "Preview this track")
                 play_btn.setStyleSheet(
                     f"QPushButton {{ background:{_BG_DARK}; color:{_ACCENT};"
                     f" border:1px solid {_BORDER}; border-radius:4px;"
@@ -523,12 +905,15 @@ class SlideEditor(QWidget):
                     f" color:{_TEXT_PRI}; }}"
                 )
 
-                def _make_play_handler(i, btn):
+                def _make_play_handler(i, btn, vid):
                     def handler():
-                        self._toggle_audio_preview(i, btn)
+                        if vid:
+                            self._toggle_video_preview(i)
+                        else:
+                            self._toggle_audio_preview(i, btn)
                     return handler
 
-                play_btn.clicked.connect(_make_play_handler(idx, play_btn))
+                play_btn.clicked.connect(_make_play_handler(idx, play_btn, is_video))
                 # Center the button in the cell
                 btn_container = QWidget()
                 btn_lay = QHBoxLayout(btn_container)
@@ -537,9 +922,9 @@ class SlideEditor(QWidget):
                 btn_lay.addWidget(play_btn)
                 self._asset_table.setCellWidget(row, 2, btn_container)
 
-        # Hide volume/play columns when no audio assets
-        self._asset_table.setColumnHidden(1, not has_any_audio)
-        self._asset_table.setColumnHidden(2, not has_any_audio)
+        # Hide volume/play columns when no audio/video assets
+        self._asset_table.setColumnHidden(1, not has_timed)
+        self._asset_table.setColumnHidden(2, not has_timed)
 
         # Show audio stack checkbox only when 2+ audio assets
         n_audio = sum(1 for a in self._pending_assets if a.asset_type == "audio")
@@ -568,8 +953,9 @@ class SlideEditor(QWidget):
             self._preview_player.stop()
             return
 
-        # Stop any current preview
+        # Stop any current preview (audio or video — one at a time)
         self._stop_audio_preview()
+        self._stop_video_preview()
 
         asset = self._pending_assets[idx]
         full_path = os.path.join(self._assets_dir, asset.path)
@@ -606,6 +992,52 @@ class SlideEditor(QWidget):
                     btn.setText("\u25b6")
                     btn.setToolTip("Preview this track")
 
+    # ---- Video preview playback (driven via the preview pane) ----
+    def _toggle_video_preview(self, idx: int):
+        self._stop_audio_preview()
+        mw = self._preview.media_for_asset_index(idx)
+        if mw is None:
+            return
+        if mw.is_playing():
+            mw.toggle_play_pause()       # pause -> playing_changed resets icon
+            return
+        # Stop any other previewing video first
+        if self._video_preview_idx not in (-1, idx):
+            other = self._preview.media_for_asset_index(self._video_preview_idx)
+            if other is not None:
+                other.stop()
+        self._video_preview_idx = idx
+        mw.toggle_play_pause()           # play -> playing_changed sets icon
+
+    def _stop_video_preview(self):
+        if self._video_preview_idx != -1:
+            mw = self._preview.media_for_asset_index(self._video_preview_idx)
+            if mw is not None:
+                mw.stop()
+            self._video_preview_idx = -1
+
+    def _on_video_preview_state(self, idx: int, playing: bool):
+        self._set_play_button_icon(idx, playing)
+        if not playing and self._video_preview_idx == idx:
+            self._video_preview_idx = -1
+
+    def _set_play_button_icon(self, idx: int, playing: bool):
+        w = self._asset_table.cellWidget(idx, 2)
+        if w:
+            btn = w.findChild(QPushButton)
+            if btn:
+                btn.setText("⏸" if playing else "▶")
+                btn.setToolTip("Pause preview" if playing else "Preview this video")
+
+    def _wire_video_previews(self):
+        """Connect each preview-pane video to its asset-table play button."""
+        for i, a in enumerate(self._pending_assets):
+            if a.asset_type == "video":
+                mw = self._preview.media_for_asset_index(i)
+                if mw is not None:
+                    mw.playing_changed.connect(
+                        lambda playing, idx=i: self._on_video_preview_state(idx, playing))
+
     def _refresh_preview(self):
         preview_slide = Slide(
             text=self._text_edit.toPlainText().strip(),
@@ -613,6 +1045,7 @@ class SlideEditor(QWidget):
             audio_stack=self._stack_check.isChecked(),
         )
         self._preview.load_slide(preview_slide, self._assets_dir)
+        self._wire_video_previews()
 
     # ---- Asset management ----
     def _on_add_asset(self):
@@ -624,6 +1057,18 @@ class SlideEditor(QWidget):
         if path:
             self._try_add_asset(path)
 
+    def _cell_count(self, assets: list) -> int:
+        """Number of grid cells the assets occupy (a stacked-audio group of
+        2+ clips counts as a single cell)."""
+        n_fixed = sum(1 for a in assets
+                      if a.asset_type in ("image", "gif", "video"))
+        n_audio = sum(1 for a in assets if a.asset_type == "audio")
+        if self._stack_check.isChecked() and n_audio >= 2:
+            audio_cells = 1
+        else:
+            audio_cells = n_audio
+        return n_fixed + audio_cells
+
     def _try_add_asset(self, src_path: str):
         ext = os.path.splitext(src_path)[1].lower()
         atype = _ext_to_type(ext)
@@ -631,41 +1076,30 @@ class SlideEditor(QWidget):
             QMessageBox.warning(self, "Unsupported", "File type not supported.")
             return
 
-        # Validation rules
-        has_video = any(a.asset_type == "video" for a in self._pending_assets)
-        has_images = any(a.asset_type in ("image", "gif") for a in self._pending_assets)
-        has_audio = any(a.asset_type == "audio" for a in self._pending_assets)
-        n_images = sum(1 for a in self._pending_assets
-                       if a.asset_type in ("image", "gif"))
-
-        if atype == "video":
-            if self._pending_assets:
-                QMessageBox.warning(
-                    self, "Video",
-                    "Video must be the only asset on a slide.\n"
-                    "Remove other assets first."
-                )
-                return
-        elif atype in ("image", "gif"):
-            if has_video:
-                QMessageBox.warning(self, "Conflict",
-                                    "Cannot add images when a video is attached.")
-                return
-            if n_images >= 4:
-                QMessageBox.warning(self, "Limit", "Maximum 4 images per slide.")
-                return
-        elif atype == "audio":
-            if has_video:
-                QMessageBox.warning(self, "Conflict",
-                                    "Cannot add audio when a video is attached.")
-                return
-            if has_audio and not self._stack_check.isChecked():
-                # Auto-enable stacking when adding a second audio
+        # Auto-enable stacking on the 2nd+ audio so the audio group stays a
+        # single grid cell (matches the renderer's collapsing behaviour).
+        if atype == "audio":
+            n_audio = sum(1 for a in self._pending_assets
+                          if a.asset_type == "audio")
+            if n_audio >= 1 and not self._stack_check.isChecked():
                 self._stack_check.setChecked(True)
+
+        # Enforce the max-4-cells limit (any mix of media).
+        projected = self._pending_assets + [SlideAsset(path="", asset_type=atype)]
+        if self._cell_count(projected) > 4:
+            QMessageBox.warning(
+                self, "Limit",
+                "Maximum 4 items per slide.\n"
+                "(A stacked-audio group counts as one item.)"
+            )
+            return
 
         # Copy to assets dir
         rel, confirmed_type = copy_asset_to_assets_dir(src_path, self._assets_dir)
-        self._pending_assets.append(SlideAsset(path=rel, asset_type=confirmed_type))
+        # Videos default to full volume; audio keeps the quieter mixing default.
+        default_vol = 1.0 if confirmed_type == "video" else 0.3
+        self._pending_assets.append(
+            SlideAsset(path=rel, asset_type=confirmed_type, volume=default_vol))
         self._refresh_asset_list()
         self._refresh_preview()
 
@@ -674,6 +1108,20 @@ class SlideEditor(QWidget):
         if 0 <= row < len(self._pending_assets):
             self._pending_assets.pop(row)
             self._refresh_asset_list()
+            self._refresh_preview()
+
+    def _move_asset(self, delta: int):
+        """Swap the selected asset with its neighbour (reordering changes the
+        on-screen grid position)."""
+        row = self._asset_table.currentRow()
+        j = row + delta
+        if (0 <= row < len(self._pending_assets)
+                and 0 <= j < len(self._pending_assets)):
+            self._stop_audio_preview()  # row indices are about to shift
+            self._pending_assets[row], self._pending_assets[j] = (
+                self._pending_assets[j], self._pending_assets[row])
+            self._refresh_asset_list()
+            self._asset_table.selectRow(j)
             self._refresh_preview()
 
     # ---- Drag-and-drop ----

@@ -99,80 +99,60 @@ class _ControlsBar(QWidget):
     Detach via detach() before the player is given to another widget.
     """
 
-    def __init__(self, parent=None, poll_interval: int = 300):
+    def __init__(self, parent=None, poll_interval: int = 300, compact: bool = False):
         super().__init__(parent)
         self._player: "QMediaPlayer | None" = None
         self._audio_out: "QAudioOutput | None" = None
         self._dragging = False
+        self._compact = compact
 
         self.setStyleSheet(f"background: {_CTRL_BG}; border-radius: 6px;")
-        root = QVBoxLayout(self)
-        root.setContentsMargins(8, 6, 8, 6)
-        root.setSpacing(4)
 
-        # Seek slider
+        # ---- create all controls up-front (so attributes/handlers always
+        #      exist, regardless of which layout variant is used) ----
         self.seek_slider = QSlider(Qt.Orientation.Horizontal)
         self.seek_slider.setRange(0, 0)
         self.seek_slider.setStyleSheet(_SLIDER_H)
         self.seek_slider.sliderPressed.connect(self._on_pressed)
         self.seek_slider.sliderReleased.connect(self._on_released)
         self.seek_slider.sliderMoved.connect(self._on_moved)
-        root.addWidget(self.seek_slider)
-
-        btn_row = QHBoxLayout()
-        btn_row.setSpacing(6)
 
         self.rewind_btn = QPushButton("⏮")
         self.rewind_btn.setToolTip("Rewind to start")
-        self.rewind_btn.setFixedWidth(42)
         self.rewind_btn.setStyleSheet(_BTN_STYLE)
         self.rewind_btn.clicked.connect(self._on_rewind)
-        btn_row.addWidget(self.rewind_btn)
 
         self.play_btn = QPushButton("▶")
         self.play_btn.setToolTip("Play / Pause  (or click video)")
-        self.play_btn.setFixedWidth(42)
         self.play_btn.setStyleSheet(_BTN_STYLE)
         self.play_btn.clicked.connect(self.toggle_play_pause)
-        btn_row.addWidget(self.play_btn)
 
         self.stop_btn = QPushButton("■")
         self.stop_btn.setToolTip("Stop")
-        self.stop_btn.setFixedWidth(42)
         self.stop_btn.setStyleSheet(_BTN_STYLE)
         self.stop_btn.clicked.connect(self._on_stop)
-        btn_row.addWidget(self.stop_btn)
 
-        btn_row.addSpacing(8)
-
-        vol_icon = QLabel("🔊")
-        vol_icon.setStyleSheet(f"color: {_TEXT}; font-size: 14px; background: transparent;")
-        btn_row.addWidget(vol_icon)
+        self.vol_icon = QLabel("🔊")
+        self.vol_icon.setStyleSheet(f"color: {_TEXT}; font-size: 14px; background: transparent;")
 
         self.vol_slider = QSlider(Qt.Orientation.Horizontal)
         self.vol_slider.setRange(0, 100)
         self.vol_slider.setValue(100)
-        self.vol_slider.setFixedWidth(90)
         self.vol_slider.setToolTip("Volume")
         self.vol_slider.setStyleSheet(_VOL_SLIDER)
         self.vol_slider.valueChanged.connect(self._on_volume)
-        btn_row.addWidget(self.vol_slider)
-
-        btn_row.addStretch()
 
         self.time_label = QLabel("0:00 / 0:00")
         self.time_label.setStyleSheet(f"color: {_TEXT}; font-size: 13px; background: transparent;")
-        btn_row.addWidget(self.time_label)
-
-        btn_row.addSpacing(6)
 
         self.fs_btn = QPushButton("⛶")
         self.fs_btn.setToolTip("Toggle fullscreen  [F]")
-        self.fs_btn.setFixedWidth(42)
         self.fs_btn.setStyleSheet(_BTN_STYLE)
-        btn_row.addWidget(self.fs_btn)
 
-        root.addLayout(btn_row)
+        if compact:
+            self._build_compact_layout()
+        else:
+            self._build_full_layout()
 
         # Position poll timer
         self._timer = QTimer(self)
@@ -183,6 +163,56 @@ class _ControlsBar(QWidget):
         # key events must flow to the parent window's event filter
         for w in self.findChildren((QPushButton, QSlider)):
             w.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+
+    def _build_full_layout(self):
+        """Two-row transport bar (seek on top, buttons below)."""
+        self.rewind_btn.setFixedWidth(42)
+        self.play_btn.setFixedWidth(42)
+        self.stop_btn.setFixedWidth(42)
+        self.vol_slider.setFixedWidth(90)
+        self.fs_btn.setFixedWidth(42)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(8, 6, 8, 6)
+        root.setSpacing(4)
+        root.addWidget(self.seek_slider)
+
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(6)
+        btn_row.addWidget(self.rewind_btn)
+        btn_row.addWidget(self.play_btn)
+        btn_row.addWidget(self.stop_btn)
+        btn_row.addSpacing(8)
+        btn_row.addWidget(self.vol_icon)
+        btn_row.addWidget(self.vol_slider)
+        btn_row.addStretch()
+        btn_row.addWidget(self.time_label)
+        btn_row.addSpacing(6)
+        btn_row.addWidget(self.fs_btn)
+        root.addLayout(btn_row)
+
+    def _build_compact_layout(self):
+        """Single-row mini transport bar for small grid cells."""
+        # Unused-in-compact controls stay created (handlers reference them)
+        # but are hidden and left out of the layout.
+        self.rewind_btn.setVisible(False)
+        self.stop_btn.setVisible(False)
+        self.vol_icon.setVisible(False)
+
+        self.play_btn.setFixedWidth(34)
+        self.fs_btn.setFixedWidth(30)
+        self.vol_slider.setFixedWidth(54)
+        self.time_label.setStyleSheet(
+            f"color: {_TEXT}; font-size: 11px; background: transparent;")
+
+        row = QHBoxLayout(self)
+        row.setContentsMargins(6, 3, 6, 3)
+        row.setSpacing(5)
+        row.addWidget(self.play_btn)
+        row.addWidget(self.seek_slider, stretch=1)
+        row.addWidget(self.time_label)
+        row.addWidget(self.vol_slider)
+        row.addWidget(self.fs_btn)
 
     # ---- Attach / detach ----
     def attach(self, player: "QMediaPlayer", audio_out: "QAudioOutput",
@@ -376,12 +406,25 @@ class MediaWidget(QWidget):
     Call load(path, asset_type) to switch content.
     Call stop() to stop playback.
     Call play() to (re)start playback.
+
+    Signals:
+      activated          — user interacted with this widget (click / control)
+      fullscreen_opened  — embedded video entered fullscreen
+      fullscreen_closed  — fullscreen window closed
     """
 
-    def __init__(self, parent=None, auto_play: bool = True, show_controls: bool = False):
+    activated = pyqtSignal()
+    fullscreen_opened = pyqtSignal()
+    fullscreen_closed = pyqtSignal()
+    playing_changed = pyqtSignal(bool)   # True when playing, False when paused/stopped
+
+    def __init__(self, parent=None, auto_play: bool = True, show_controls: bool = False,
+                 manage_hotkeys: bool = True, compact_controls: bool = False):
         super().__init__(parent)
         self._auto_play = auto_play
         self._show_controls = show_controls
+        self._manage_hotkeys = manage_hotkeys
+        self._compact_controls = compact_controls
         self._asset_type = ""
         self._movie: QMovie | None = None
         self._player: "QMediaPlayer | None" = None
@@ -436,23 +479,41 @@ class MediaWidget(QWidget):
         self._stack.setCurrentIndex(0)
 
         # ---- Transport controls bar ----
-        self._controls = _ControlsBar(self)
+        self._controls = _ControlsBar(self, compact=self._compact_controls)
         self._controls.fs_btn.clicked.connect(self._on_fullscreen)
         root.addWidget(self._controls)
         self._controls.setVisible(False)
 
-        # Wire click-to-pause on embedded video widget
-        if _MEDIA_AVAILABLE and isinstance(getattr(self, "_video_widget", None), _ClickableVideo):
+        # Wire click-to-pause on embedded video widget — only in interactive
+        # (controls-shown) contexts like play mode. In the editor preview
+        # (show_controls=False) clicking the video does nothing; playback is
+        # driven from the asset table instead.
+        if (_MEDIA_AVAILABLE and self._show_controls
+                and isinstance(getattr(self, "_video_widget", None), _ClickableVideo)):
             self._video_widget.clicked.connect(self._controls.toggle_play_pause)
+            self._video_widget.clicked.connect(self._mark_activated)
+
+        # Emit `activated` whenever the user touches the transport controls,
+        # so an owning grid can mark this cell as the focused one.
+        self._controls.play_btn.clicked.connect(self._mark_activated)
+        self._controls.rewind_btn.clicked.connect(self._mark_activated)
+        self._controls.stop_btn.clicked.connect(self._mark_activated)
+        self._controls.fs_btn.clicked.connect(self._mark_activated)
+        self._controls.seek_slider.sliderPressed.connect(self._mark_activated)
+        self._controls.vol_slider.sliderPressed.connect(self._mark_activated)
 
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+
+    def _mark_activated(self, *args):
+        self.activated.emit()
 
     # ------------------------------------------------------------------ #
     #  Arrow-key seek (embedded mode) — event filter on parent window      #
     # ------------------------------------------------------------------ #
     def showEvent(self, event):
         super().showEvent(event)
-        if self._show_controls and self._key_filter_win is None:
+        if (self._manage_hotkeys and self._show_controls
+                and self._key_filter_win is None):
             app = QApplication.instance()
             if app is not None:
                 app.installEventFilter(self)
@@ -544,6 +605,41 @@ class MediaWidget(QWidget):
         self._stack.setVisible(not controls_only)
 
     # ------------------------------------------------------------------ #
+    #  Thin control surface (used by an owning SlideGrid)                 #
+    # ------------------------------------------------------------------ #
+    @property
+    def is_video(self) -> bool:
+        return self._asset_type == "video"
+
+    def is_timed(self) -> bool:
+        return self._asset_type in ("video", "audio")
+
+    def is_playing(self) -> bool:
+        return bool(_MEDIA_AVAILABLE and self._player is not None
+                    and self._player.playbackState()
+                    == QMediaPlayer.PlaybackState.PlayingState)
+
+    def set_volume(self, pct: int):
+        """Set playback volume (0-100); also updates the transport slider."""
+        self._controls.vol_slider.setValue(int(pct))
+
+    def seek_relative(self, ms: int):
+        self._controls.seek_by(ms)
+
+    def toggle_play_pause(self):
+        self._controls.toggle_play_pause()
+
+    def restart(self):
+        self._controls._on_rewind()
+
+    def toggle_fullscreen(self):
+        self._on_fullscreen()
+
+    def force_close_fullscreen(self):
+        if self._fs_window is not None:
+            self._fs_window.close()
+
+    # ------------------------------------------------------------------ #
     #  Resize — rescale static image to fit                              #
     # ------------------------------------------------------------------ #
     def resizeEvent(self, event):
@@ -614,9 +710,15 @@ class MediaWidget(QWidget):
         self._audio_out.setVolume(self._controls.current_volume() / 100.0)
         self._player = QMediaPlayer()
         self._player.setAudioOutput(self._audio_out)
+        self._player.playbackStateChanged.connect(self._emit_playing_changed)
         if hasattr(self, "_video_widget"):
             self._player.setVideoOutput(self._video_widget)
         self._controls.attach(self._player, self._audio_out)
+
+    def _emit_playing_changed(self, state):
+        if _MEDIA_AVAILABLE:
+            self.playing_changed.emit(
+                state == QMediaPlayer.PlaybackState.PlayingState)
 
     # ------------------------------------------------------------------ #
     #  Fullscreen                                                        #
@@ -644,6 +746,7 @@ class MediaWidget(QWidget):
             current_vol=vol,
             parent=self.window(),
         )
+        self.fullscreen_opened.emit()
 
     def _on_fullscreen_closed(self, restored_vol: int):
         """Called by _FullscreenWindow.closeEvent — player output already restored."""
@@ -653,3 +756,4 @@ class MediaWidget(QWidget):
         # Re-attach controls to player
         if self._player and self._audio_out:
             self._controls.attach(self._player, self._audio_out, vol=restored_vol)
+        self.fullscreen_closed.emit()

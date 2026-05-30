@@ -25,15 +25,19 @@ class SlideAsset:
 
     def to_dict(self) -> dict:
         d = {"path": self.path, "asset_type": self.asset_type}
-        if self.asset_type == "audio":
+        if self.asset_type in ("audio", "video"):
             d["volume"] = self.volume
         return d
 
     @classmethod
     def from_dict(cls, d: dict) -> "SlideAsset":
+        atype = d.get("asset_type", "")
+        # Videos predate per-asset volume; default them to full volume so
+        # existing boards keep playing at 100%.
+        default_vol = 1.0 if atype == "video" else 0.3
         return cls(path=d.get("path", ""),
-                   asset_type=d.get("asset_type", ""),
-                   volume=d.get("volume", 0.3))
+                   asset_type=atype,
+                   volume=d.get("volume", default_vol))
 
 
 @dataclass
