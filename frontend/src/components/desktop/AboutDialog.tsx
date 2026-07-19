@@ -4,12 +4,13 @@
  *
  * Desktop-only: both surfaces render null in a plain browser.
  */
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 
 import { Button } from '@/components/ui/Button'
 import { Dialog } from '@/components/ui/Dialog'
 import { Spinner } from '@/components/ui/Spinner'
 import { desktop, isDesktop } from '@/lib/desktop'
+import { notesForVersion } from '@/lib/releaseNotes'
 
 import { ReleaseNotes } from './notes'
 import { useUpdateState } from './useUpdateState'
@@ -51,26 +52,12 @@ function UpdateStatusLine() {
 }
 
 export function AboutDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  // Release notes for the *installed* version, if the shell still has them
-  // (whatsNew.get() is non-null until dismissed after an update).
-  const [currentNotes, setCurrentNotes] = useState<string | null>(null)
-
-  useEffect(() => {
-    if (!open || !desktop) return
-    let alive = true
-    const version = desktop.appVersion
-    desktop.whatsNew
-      .get()
-      .then((wn) => {
-        if (alive) setCurrentNotes(wn && wn.toVersion === version ? wn.notes : null)
-      })
-      .catch(() => {})
-    return () => {
-      alive = false
-    }
-  }, [open])
-
   if (!desktop) return null
+
+  // The app's own changelog section, baked in at build time — always
+  // available, offline, on fresh installs and long after the post-update
+  // What's-New was dismissed.
+  const currentNotes = notesForVersion(desktop.appVersion)
 
   return (
     <Dialog open={open} onClose={onClose} title="About" className="w-full max-w-md">
@@ -106,7 +93,17 @@ export function AboutDialog({ open, onClose }: { open: boolean; onClose: () => v
           </div>
         )}
 
-        <p className="text-ink-faint mt-5 text-xs">Updates install automatically on restart.</p>
+        <p className="text-ink-faint mt-5 text-xs">
+          Updates install automatically on restart.{' '}
+          <a
+            href="https://github.com/acohen1/jeopardy/releases"
+            target="_blank"
+            rel="noreferrer"
+            className="text-accent hover:text-accent-bright underline-offset-2 hover:underline"
+          >
+            Full changelog
+          </a>
+        </p>
       </div>
     </Dialog>
   )
