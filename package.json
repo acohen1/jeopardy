@@ -1,0 +1,20 @@
+{
+  "name": "chaewon-jeopardy",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -n api,web -c blue,green \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "cd backend && uv run uvicorn app.main:app --reload --port 8000",
+    "dev:web": "cd frontend && npm run dev",
+    "build": "cd frontend && npm run build",
+    "typecheck": "cd frontend && npx tsc --noEmit",
+    "test:api": "cd backend && uv run pytest",
+    "desktop:dev": "cd desktop && npm run dev",
+    "desktop:build:backend": "cd backend && uv run pyinstaller jeopardy-backend.spec --noconfirm",
+    "desktop:build:frontend": "cd frontend && npm run build",
+    "desktop:package": "npm run desktop:build:frontend && npm run desktop:build:backend && cd desktop && npx electron-builder --win --publish never",
+    "desktop:package:dir": "npm run desktop:build:frontend && npm run desktop:build:backend && cd desktop && npx electron-builder --dir"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "name": "chaewon-jeopardy",
+  "productName": "Chaewon Jeopardy",
+  "version": "2.1.0",
+  "private": true,
+  "description": "Chaewon Jeopardy desktop shell (Electron)",
+  "main": "main.cjs",
+  "scripts": {
+    "dev": "electron .",
+    "package": "electron-builder --win --publish never",
+    "package:dir": "electron-builder --dir"
+  },
+  "dependencies": {
+    "electron-updater": "^6"
+  },
+  "devDependencies": {
+    "electron": "^33",
+    "electron-builder": "^25"
+  }
+}

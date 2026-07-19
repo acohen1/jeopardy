@@ -1,0 +1,123 @@
+# Auto-publish the desktop app when main advances with a NEW version.
+#
+# Flow: work on `dev` → bump `desktop/package.json` version → merge to `main`
+# → this workflow builds the Windows installer and publishes GitHub Release
+# v{version} → every installed copy self-updates and shows the release notes.
+#
+# Pushing to main WITHOUT bumping the version is safe: the run no-ops when
+# the tag already exists.
+name: Release desktop app
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {} # re-publish current version (used by consolidate-releases)
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # full history so release notes can span since the last tag
+
+      - name: Read version
+        id: version
+        shell: pwsh
+        run: |
+          $v = (Get-Content desktop/package.json | ConvertFrom-Json).version
+          "version=$v" >> $env:GITHUB_OUTPUT
+          Write-Host "desktop/package.json version: $v"
+
+      - name: Skip if release already exists
+        id: guard
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view "v${{ steps.version.outputs.version }}" 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "Release v${{ steps.version.outputs.version }} already exists - nothing to publish."
+            "skip=true" >> $env:GITHUB_OUTPUT
+          } else {
+            "skip=false" >> $env:GITHUB_OUTPUT
+          }
+          # gh exiting 1 for "no such release" is the NORMAL new-version case —
+          # without this, Actions' pwsh wrapper re-raises that exit code and
+          # fails the step.
+          exit 0
+
+      - uses: actions/setup-node@v7
+        if: steps.guard.outputs.skip == 'false'
+        with:
+          node-version: 22
+
+      - uses: astral-sh/setup-uv@v8.3.2
+        if: steps.guard.outputs.skip == 'false'
+
+      - name: Build frontend
+        if: steps.guard.outputs.skip == 'false'
+        shell: pwsh
+        run: |
+          cd frontend
+          npm ci
+          npm run build
+
+      - name: Build backend sidecar
+        if: steps.guard.outputs.skip == 'false'
+        shell: pwsh
+        run: |
+          cd backend
+          uv sync
+          uv run pyinstaller jeopardy-backend.spec --noconfirm
+
+      - name: Create release (authored notes when RELEASE_NOTES.md matches this version)
+        if: steps.guard.outputs.skip == 'false'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $v = "${{ steps.version.outputs.version }}"
+          $useFile = $false
+          if (Test-Path RELEASE_NOTES.md) {
+            # Staleness guard: only use authored notes written FOR this version.
+            $content = Get-Content RELEASE_NOTES.md -Raw
+            if ($content -match "(?m)^##\s*v$([regex]::Escape($v))\s*$") { $useFile = $true }
+          }
+          if ($useFile) {
+            Write-Host "Using authored RELEASE_NOTES.md for v$v"
+            # RELEASE_NOTES.md is a cumulative changelog (newest section on
+            # top). Ship ONLY this version's section: from its heading to the
+            # next "## v" heading — never the instruction comments above it,
+            # never older versions below it.
+            $content = Get-Content RELEASE_NOTES.md -Raw
+            $m = [regex]::Match($content, "(?ms)^##\s*v$([regex]::Escape($v))\s*$\s*(.*?)(?=^##\s*v|\z)")
+            $body = "## v$v`n`n" + $m.Groups[1].Value.Trim()
+            Set-Content -Path release-body.md -Value $body -Encoding utf8
+            gh release create "v$v" --title "Chaewon Jeopardy v$v" --notes-file release-body.md
+          } else {
+            Write-Host "RELEASE_NOTES.md missing or not written for v$v - using auto-generated notes"
+            gh release create "v$v" --title "Chaewon Jeopardy v$v" --generate-notes
+          }
+          exit 0
+
+      - name: Build installer and upload to the release
+        if: steps.guard.outputs.skip == 'false'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd desktop
+          npm ci
+          npx electron-builder --win --publish always
+
+# (The installer's artifactName is version-free — see electron-builder.yml —
+# so releases/latest/download/Chaewon-Jeopardy-Setup.exe is permanent with no
+# extra upload step, and each release page carries exactly one exe.)

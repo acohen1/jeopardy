@@ -1,10 +1,29 @@
+# Node / frontend
+node_modules/
+frontend/dist/
+*.tsbuildinfo
+
+# Python
 __pycache__/
 *.pyc
 *.pyo
-*.pyd
-dist/
-build/
-*.spec
-assets/
-Test_Board.json
-ffmpeg.exe
+.venv/
+
+# Backend runtime data (boards + uploaded media)
+backend/data/
+
+# Legacy PyQt app (kept runnable; artifacts + media ignored)
+legacy/build/
+legacy/dist/
+legacy/assets/
+legacy/ffmpeg.exe
+legacy/*.spec
+legacy/Test_Board.json
+
+# Desktop (Electron shell)
+desktop/node_modules/
+desktop/dist/
+
+# Backend PyInstaller sidecar artifacts
+backend/build/
+backend/dist/

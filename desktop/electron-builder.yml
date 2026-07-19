@@ -1,0 +1,66 @@
+# electron-builder configuration for the Chaewon Jeopardy desktop shell.
+# Docs: https://www.electron.build/configuration
+
+appId: chaewon.jeopardy.app
+productName: Chaewon Jeopardy
+
+directories:
+  output: dist
+  buildResources: build
+
+files:
+  - main.cjs
+  - preload.cjs
+  - package.json
+  - build/icon.ico
+
+# Bundled next to the app in resources/ — main.cjs reads them from
+# process.resourcesPath. Build backend + frontend FIRST (npm run desktop:package
+# at the repo root does all three in order).
+extraResources:
+  - from: ../backend/dist/jeopardy-backend.exe
+    to: jeopardy-backend.exe
+  - from: ../frontend/dist
+    to: frontend-dist
+
+win:
+  target: nsis
+  icon: build/icon.ico
+  # Version-free on purpose: assets are scoped per-release on GitHub, so one
+  # name serves both the auto-updater (latest.yml points at it) and the
+  # permanent download link releases/latest/download/Chaewon-Jeopardy-Setup.exe
+  # — and the release page shows exactly ONE exe.
+  artifactName: "Chaewon-Jeopardy-Setup.${ext}"
+
+# Classic assisted install wizard (not one-click): welcome page, choose the
+# install folder, shortcuts, run-after-finish. Defaults to the per-user
+# location (%LOCALAPPDATA%\Programs — same as Discord/Slack/VS Code) so no
+# admin prompt; the wizard lets anyone pick Program Files if they insist.
+# Auto-UPDATES stay silent — the wizard only shows on first install.
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Chaewon Jeopardy
+  runAfterFinish: true
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  # keep boards in %APPDATA% on uninstall (default, stated for clarity)
+  deleteAppDataOnUninstall: false
+
+fileAssociations:
+  - ext: jeopardy
+    name: Jeopardy Board
+    icon: build/icon.ico
+
+# Auto-update feed: GitHub Releases on this repo. The release workflow
+# (.github/workflows/release.yml) publishes on every push to main with a new
+# version in desktop/package.json. NOTE: installed apps can only download
+# updates if the repo (or at least its releases) is PUBLIC.
+publish:
+  provider: github
+  owner: acohen1
+  repo: jeopardy
+  releaseType: release
