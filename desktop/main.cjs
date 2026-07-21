@@ -47,6 +47,67 @@ let resolveBackendReady;
 const backendReady = new Promise((resolve) => { resolveBackendReady = resolve; });
 
 // ---------------------------------------------------------------------------
+// Shell log — %APPDATA%/Chaewon Jeopardy/shell.log
+// Field failures (like a broken update) were undiagnosable without this.
+// ---------------------------------------------------------------------------
+
+function shellLog(line) {
+  try {
+    const dir = path.join(app.getPath('appData'), 'Chaewon Jeopardy');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.appendFileSync(
+      path.join(dir, 'shell.log'),
+      `${new Date().toISOString()} ${line}\n`,
+      'utf8'
+    );
+  } catch { /* logging must never break the app */ }
+}
+
+/**
+ * Kill ANY jeopardy-backend.exe on the system — not just our child.
+ * Orphaned sidecars (crashes, hard kills) keep the exe file locked, and a
+ * locked file during an auto-update means NSIS silently skips it → corrupt
+ * install → "spawn UNKNOWN" on next launch. Run before spawning and before
+ * any update installs.
+ */
+function killStrayBackends(context) {
+  if (process.platform !== 'win32') return;
+  try {
+    const result = spawnSync('taskkill', ['/IM', 'jeopardy-backend.exe', '/F', '/T'], {
+      windowsHide: true,
+      timeout: 10000,
+    });
+    if (result.status === 0) {
+      shellLog(`killStrayBackends(${context}): stray sidecar(s) terminated`);
+      // taskkill returning != handles released; give Windows a beat.
+      spawnSync('cmd', ['/c', 'ping', '-n', '2', '127.0.0.1'], {
+        windowsHide: true,
+        timeout: 5000,
+      });
+    }
+  } catch (err) {
+    shellLog(`killStrayBackends(${context}) failed: ${err}`);
+  }
+}
+
+/** Best-effort sweep of stale PyInstaller onefile extraction dirs (>24h). */
+function sweepMeiOrphans() {
+  try {
+    const tmp = os.tmpdir();
+    const cutoff = Date.now() - 24 * 3600 * 1000;
+    for (const name of fs.readdirSync(tmp)) {
+      if (!name.startsWith('_MEI')) continue;
+      const p = path.join(tmp, name);
+      try {
+        if (fs.statSync(p).mtimeMs < cutoff) {
+          fs.rmSync(p, { recursive: true, force: true });
+        }
+      } catch { /* in use or gone — skip */ }
+    }
+  } catch { /* best-effort */ }
+}
+
+// ---------------------------------------------------------------------------
 // Settings (userData/settings.json): host override + what's-new persistence
 // ---------------------------------------------------------------------------
 
@@ -192,7 +253,18 @@ let respawning = false;
 async function startSidecar() {
   const exePath = path.join(process.resourcesPath, 'jeopardy-backend.exe');
   if (!fs.existsSync(exePath)) {
-    throw new Error(`Backend executable not found at:\n${exePath}`);
+    throw new Error(
+      `Backend executable not found at:\n${exePath}\n\nReinstalling the app fixes this.`
+    );
+  }
+  // A partially-written exe (interrupted update) fails as "spawn UNKNOWN" —
+  // catch it here with a clear message instead.
+  const sizeMb = fs.statSync(exePath).size / (1024 * 1024);
+  if (sizeMb < 5) {
+    shellLog(`sidecar exe suspicious size: ${sizeMb.toFixed(1)}MB`);
+    throw new Error(
+      `The backend file looks damaged (${sizeMb.toFixed(1)} MB) — likely an interrupted update.\n\nReinstalling the app fixes this.`
+    );
   }
 
   const lanEnabled = settings.lan === true;
@@ -202,17 +274,46 @@ async function startSidecar() {
   const port = lanEnabled ? await getStablePort(8477) : await getFreePort();
   const dataDir = getDataDir();
 
-  sidecar = spawn(exePath, [], {
-    env: {
-      ...process.env,
-      PORT: String(port),
-      JEOPARDY_HOST: host,
-      JEOPARDY_DATA_DIR: dataDir,
-      FRONTEND_DIST: path.join(process.resourcesPath, 'frontend-dist'),
-    },
-    stdio: 'ignore',
-    windowsHide: true,
-  });
+  // Spawn with retries: fresh-after-update binaries can be briefly locked by
+  // AV scans or not-yet-released handles; one failure must not kill the app.
+  let lastError = null;
+  sidecar = null;
+  for (let attempt = 1; attempt <= 3 && sidecar === null; attempt++) {
+    try {
+      shellLog(`spawning sidecar (attempt ${attempt}) port=${port} host=${host}`);
+      const child = spawn(exePath, [], {
+        env: {
+          ...process.env,
+          PORT: String(port),
+          JEOPARDY_HOST: host,
+          JEOPARDY_DATA_DIR: dataDir,
+          FRONTEND_DIST: path.join(process.resourcesPath, 'frontend-dist'),
+        },
+        stdio: 'ignore',
+        windowsHide: true,
+      });
+      // spawn errors (UNKNOWN/EACCES/…) arrive async — surface them here.
+      await new Promise((resolve, reject) => {
+        const onError = (err) => reject(err);
+        child.once('error', onError);
+        setTimeout(() => {
+          child.removeListener('error', onError);
+          resolve();
+        }, 400);
+      });
+      sidecar = child;
+    } catch (err) {
+      lastError = err;
+      shellLog(`sidecar spawn attempt ${attempt} failed: ${err}`);
+      await new Promise((r) => setTimeout(r, 700));
+    }
+  }
+  if (sidecar === null) {
+    throw new Error(
+      `Could not start the backend (${lastError}).\n\nReinstalling the app fixes this.`
+    );
+  }
+  shellLog(`sidecar running pid=${sidecar.pid}`);
 
   sidecar.on('exit', (code) => {
     sidecar = null;
@@ -517,7 +618,12 @@ ipcMain.on('jeopardy:update-check', () => {
 ipcMain.on('jeopardy:update-restart', () => {
   if (!autoUpdater) return;
   quitting = true;
+  shellLog('update-restart: tearing down sidecars before install');
   killSidecar();
+  // The NSIS installer starts the moment we quit — ANY lingering backend
+  // process (incl. orphans from old crashes) still holding the exe makes the
+  // installer silently skip locked files → corrupt install → spawn UNKNOWN.
+  killStrayBackends('pre-update');
   autoUpdater.quitAndInstall();
 });
 
@@ -695,6 +801,13 @@ function createWindow(url) {
 
 if (gotLock) {
   app.whenReady().then(async () => {
+    shellLog(`app start v${app.getVersion()} packaged=${app.isPackaged}`);
+    if (!isDev) {
+      // Stale sidecars from crashes would fight us for the port AND hold
+      // file locks through future updates; clear them before spawning ours.
+      killStrayBackends('startup');
+      sweepMeiOrphans();
+    }
     initWhatsNew();
     setupAutoUpdater();
 
@@ -715,6 +828,7 @@ if (gotLock) {
       } catch (err) {
         quitting = true;
         killSidecar();
+        shellLog(`startup failed: ${err.message || err}`);
         dialog.showErrorBox(
           'Chaewon Jeopardy failed to start',
           `${err.message || err}`
@@ -743,6 +857,9 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   quitting = true;
   killSidecar();
+  // autoInstallOnAppQuit can run the installer right after this quit — make
+  // sure no stray backend holds file locks when it does.
+  if (!isDev) killStrayBackends('before-quit');
 });
 
 app.on('will-quit', () => {
