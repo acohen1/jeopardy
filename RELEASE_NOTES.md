@@ -1,7 +1,12 @@
 <!-- Cumulative changelog — NEWEST version section on top; keep the old ones. -->
 <!-- HOW IT WORKS: when main is pushed with a new version in desktop/package.json, -->
 <!-- the release workflow ships ONLY the section whose heading matches that version -->
-<!-- (e.g. "## v2.2.0") as the release body / in-app "What's new". No matching -->
+<!-- (e.g. "## v2.2.1
+
+- Fixes the app failing to start after an update on some machines ("spawn UNKNOWN") — updates now install reliably
+- If anything does go wrong, the app now explains what happened and keeps a log to help us fix it
+
+## v2.2.0") as the release body / in-app "What's new". No matching -->
 <!-- section = auto-generated notes are used instead, so stale notes can't ship. -->
 <!-- Release prep = bump desktop/package.json + add a new section here, one commit. -->
 <!-- Plain lines and "- " bullets render best in-app. -->
