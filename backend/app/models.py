@@ -53,6 +53,9 @@ class Cell(BaseModel):
     answer_slide: Slide = Field(default_factory=Slide)
     value: int = 0
     used: bool = False
+    # Bonus ("Daily Double") tile: looks normal on the play board, but opens
+    # with a reveal splash + host wager instead of the flat value.
+    bonus: bool = False
 
 
 class Player(BaseModel):
@@ -174,6 +177,7 @@ def _migrate_cell(d: dict) -> dict:
             "answer_slide": _migrate_slide(d.get("answer_slide", {})),
             "value": d.get("value", 0),
             "used": d.get("used", False),
+            "bonus": d.get("bonus", False),
         }
     # Oldest format — flat question/answer/asset_path/asset_type
     q_slide: dict = {"text": d.get("question", ""), "assets": [], "audio_stack": False}

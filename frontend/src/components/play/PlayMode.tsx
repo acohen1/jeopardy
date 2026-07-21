@@ -159,10 +159,13 @@ export function PlayMode({ boardId }: { boardId: string }) {
           players={board.players}
           allowNegatives={board.allow_negatives}
           onAward={(name, delta) => {
-            // History-feed note: "Category 3 · $600" (deducts share the note).
+            // History-feed note: "Category 3 · $600" (deducts share the note);
+            // bonus opens carry the wager-based delta and a "★ " prefix, e.g.
+            // "★ Category 3 · $1,200".
             const catName =
               board.categories[overlay.col]?.trim() || `Category ${overlay.col + 1}`
-            const note = `${truncate(catName, 24)} · ${money(overlay.cell.value)}`
+            const isBonusOpen = overlay.cell.bonus && !overlay.cell.used
+            const note = `${isBonusOpen ? '★ ' : ''}${truncate(catName, 24)} · ${money(Math.abs(delta))}`
             actions.award.mutate([name, delta, note])
           }}
           onClose={() => setOverlay(null)}

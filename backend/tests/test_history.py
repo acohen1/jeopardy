@@ -87,3 +87,27 @@ def test_history_capped_at_200(client, board):
     b = client.get(f"/api/boards/{bid}").json()
     assert len(b["history"]) == 200
     assert b["players"][0]["score"] == 205  # cap trims the log, not the score
+
+
+# ------------------------------------------------------------------ #
+#  Bonus tiles                                                        #
+# ------------------------------------------------------------------ #
+def test_bonus_flag_persists_and_defaults_false(client, board):
+    bid = board["id"]
+    doc = client.get(f"/api/boards/{bid}").json()
+    assert doc["cells"][0][0]["bonus"] is False  # default
+    doc["cells"][1][2]["bonus"] = True
+    saved = client.put(f"/api/boards/{bid}", json=doc).json()
+    assert saved["cells"][1][2]["bonus"] is True
+    assert client.get(f"/api/boards/{bid}").json()["cells"][1][2]["bonus"] is True
+
+
+def test_legacy_import_defaults_bonus_false(client):
+    import json as J
+
+    legacy = {"num_cols": 1, "num_rows": 1, "categories": ["A"], "row_values": [100],
+              "cells": [[{"question": "q", "answer": "a", "value": 100}]]}
+    r = client.post("/api/boards/import",
+                    files={"file": ("old.json", J.dumps(legacy).encode())})
+    assert r.status_code == 201
+    assert r.json()["cells"][0][0]["bonus"] is False

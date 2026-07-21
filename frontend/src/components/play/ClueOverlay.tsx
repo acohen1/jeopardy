@@ -1,4 +1,4 @@
-/** ClueOverlay — full-screen two-page clue view (question → answer),
+/** ClueOverlay — full-screen clue view (question → answer),
  * mirroring legacy CellOverlay:
  *  - QUESTION page award → award + success toast, overlay STAYS OPEN.
  *  - ANSWER page award → award + close.
@@ -6,6 +6,10 @@
  *    overlay stays open.
  *  - Hotkeys: A reveal (question), Q back (answer), Esc close — coexist with
  *    SlideView's Space/arrows/R/F.
+ * BONUS tiles (fresh opens only — Review passes used:true and skips this):
+ * start on a '★ BONUS ★' splash where the host sets a wager; afterwards the
+ * question/answer pages behave identically except awards/deducts use the
+ * wager and the top badge shows '★ wager'.
  * Only the current page's SlideView is mounted (keyed) so hidden media never
  * plays; closing = unmount, which stops all media. */
 import { clsx } from 'clsx'
@@ -18,6 +22,7 @@ import { useHotkeys } from '@/hooks/useHotkeys'
 import { money } from '@/lib/format'
 import type { Cell, Player } from '@/types/board'
 
+import { BonusSplash } from './BonusSplash'
 import { ClueTimer } from './ClueTimer'
 
 export interface ClueOverlayProps {
@@ -45,7 +50,14 @@ export function ClueOverlay({
   onAward,
   onClose,
 }: ClueOverlayProps) {
-  const [page, setPage] = useState<'question' | 'answer'>('question')
+  /* A bonus tile only gets the splash + wager on a FRESH open — the snapshot
+   * arrives with used:false exactly then; Review snapshots used:true. */
+  const isBonus = cell.bonus && !cell.used
+  const [page, setPage] = useState<'bonus' | 'question' | 'answer'>(
+    isBonus ? 'bonus' : 'question',
+  )
+  /* Effective stake for awards/deducts; the tile value until a wager is set. */
+  const [wager, setWager] = useState(cell.value)
   const [flashName, setFlashName] = useState<string | null>(null)
   const flashTimer = useRef<number | undefined>(undefined)
 
@@ -65,29 +77,35 @@ export function ClueOverlay({
       if (document.fullscreenElement) return
       onClose()
     },
+    // No A/Q navigation on the bonus splash — only Esc (and the wager form).
     ...(page === 'question'
       ? { a: () => setPage('answer') }
-      : { q: () => setPage('question') }),
+      : page === 'answer'
+        ? { q: () => setPage('question') }
+        : {}),
   })
 
+  /* What an award/deduct is worth: the wager on bonus opens, else tile value. */
+  const stake = isBonus ? wager : cell.value
+
   const award = (name: string) => {
-    onAward(name, cell.value)
-    if (page === 'question') {
-      toast(`+ ${money(cell.value)} → ${name}`, { kind: 'success' })
-    } else {
+    onAward(name, stake)
+    if (page === 'answer') {
       onClose()
+    } else {
+      toast(`+ ${money(stake)} → ${name}`, { kind: 'success' })
     }
   }
 
   const deduct = (name: string) => {
-    onAward(name, -cell.value)
-    toast(`− ${money(cell.value)} → ${name}`, { kind: 'error' })
+    onAward(name, -stake)
+    toast(`− ${money(stake)} → ${name}`, { kind: 'error' })
     setFlashName(name)
     window.clearTimeout(flashTimer.current)
     flashTimer.current = window.setTimeout(() => setFlashName(null), 300)
   }
 
-  const slide = page === 'question' ? cell.question_slide : cell.answer_slide
+  const slide = page === 'answer' ? cell.answer_slide : cell.question_slide
 
   return (
     <div className="bg-bg-deep animate-fade-in fixed inset-0 z-40 flex flex-col gap-5 px-12 py-8">
@@ -103,7 +121,15 @@ export function ClueOverlay({
             </Button>
           )}
         </div>
-        <div className="text-dollar font-display text-3xl font-bold">{money(cell.value)}</div>
+        {isBonus && page !== 'bonus' ? (
+          /* Stakes badge: the host's wager, starred so everyone sees it */
+          <div className="text-dollar font-display text-3xl font-bold" title="Bonus wager">
+            <span className="mr-1.5 align-[0.2em] text-xl">★</span>
+            {money(wager)}
+          </div>
+        ) : (
+          <div className="text-dollar font-display text-3xl font-bold">{money(cell.value)}</div>
+        )}
         <div className="flex justify-end">
           {page === 'question' ? (
             <Button variant="ghost" size="sm" onClick={() => setPage('answer')}>
@@ -118,26 +144,38 @@ export function ClueOverlay({
         </div>
       </div>
 
-      {/* Slide area — only the current page is mounted (key forces remount) */}
-      <div
-        className={clsx(
-          'flex min-h-0 flex-1 flex-col rounded-2xl p-4 transition-colors duration-150',
-          page === 'answer' && 'bg-answer',
-        )}
-      >
-        <SlideView
-          key={page}
-          slide={slide}
-          boardId={boardId}
-          hotkeys
-          volumeOverrides={volumeOverrides.current}
-          onVolumeChange={rememberVolume}
-          className="min-h-0 flex-1"
+      {page === 'bonus' ? (
+        /* Bonus splash — wager first; SlideView stays unmounted until reveal */
+        <BonusSplash
+          tileValue={cell.value}
+          onSubmit={(w) => {
+            setWager(w)
+            setPage('question')
+          }}
+          onCancel={onClose}
         />
-      </div>
+      ) : (
+        /* Slide area — only the current page is mounted (key forces remount) */
+        <div
+          className={clsx(
+            'flex min-h-0 flex-1 flex-col rounded-2xl p-4 transition-colors duration-150',
+            page === 'answer' && 'bg-answer',
+          )}
+        >
+          <SlideView
+            key={page}
+            slide={slide}
+            boardId={boardId}
+            hotkeys
+            volumeOverrides={volumeOverrides.current}
+            onVolumeChange={rememberVolume}
+            className="min-h-0 flex-1"
+          />
+        </div>
+      )}
 
-      {/* Award rows */}
-      <div className="shrink-0 space-y-3">
+      {/* Award rows (not while the wager is still being set) */}
+      <div className={clsx('shrink-0 space-y-3', page === 'bonus' && 'hidden')}>
         {players.length === 0 ? (
           <p className="text-ink-muted text-center text-sm">
             No players yet — add them in the editor

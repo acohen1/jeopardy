@@ -20,6 +20,9 @@ export interface Cell {
   answer_slide: Slide
   value: number
   used: boolean
+  /** Bonus ("Daily Double") tile — normal-looking on the board, opens with a
+   * reveal splash + host wager. */
+  bonus: boolean
 }
 
 export interface Player {
@@ -71,7 +74,7 @@ export function emptySlide(): Slide {
 }
 
 export function emptyCell(value = 0): Cell {
-  return { question_slide: emptySlide(), answer_slide: emptySlide(), value, used: false }
+  return { question_slide: emptySlide(), answer_slide: emptySlide(), value, used: false, bonus: false }
 }
 
 export function slideIsFilled(slide: Slide): boolean {

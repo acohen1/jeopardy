@@ -1,6 +1,9 @@
 /** Editable board grid — category header inputs, row-value inputs, and cell
- * cards. Right-click on a cell offers Copy / Paste / Clear plus "Swap with…"
- * any other row in the same column (slides move, values stay — legacy parity). */
+ * cards. Right-click on a cell offers Copy / Paste / Clear, a bonus-tile
+ * toggle (star badge shown only in the editor — secret in play mode), plus
+ * "Swap with…" any other row in the same column (slides move, values stay —
+ * legacy parity). */
+import { Star } from 'lucide-react'
 import { Fragment, useEffect, useState } from 'react'
 
 import {
@@ -92,6 +95,20 @@ export function BoardGrid({ board, onUpdate, onEditCell }: BoardGridProps) {
     toast('Cell cleared', { kind: 'info' })
   }
 
+  // Bonus tiles look identical to normal ones on the play board — the star
+  // only ever shows here, in the editor.
+  const toggleBonus = (row: number, col: number) => {
+    const marking = !board.cells[row][col].bonus
+    onUpdate((b) => {
+      const cells = b.cells.map((r) => [...r])
+      cells[row][col] = { ...cells[row][col], bonus: !cells[row][col].bonus }
+      return { ...b, cells }
+    })
+    toast(marking ? 'Bonus tile set — it stays secret in play mode' : 'Bonus removed', {
+      kind: 'info',
+    })
+  }
+
   const openMenu = (e: React.MouseEvent, row: number, col: number) => {
     e.preventDefault()
     const items: ContextMenuItem[] = [
@@ -102,6 +119,10 @@ export function BoardGrid({ board, onUpdate, onEditCell }: BoardGridProps) {
         disabled: !hasClipboardCell(),
       },
       { label: 'Clear cell…', danger: true, onSelect: () => setClearing({ row, col }) },
+      {
+        label: board.cells[row][col].bonus ? 'Remove bonus ★' : 'Mark as bonus ★',
+        onSelect: () => toggleBonus(row, col),
+      },
       { type: 'separator' },
       { type: 'heading', label: 'Swap with…' },
     ]
@@ -223,8 +244,16 @@ function CellCard({
       type="button"
       onClick={onOpen}
       onContextMenu={onContextMenu}
-      className="bg-surface hover:border-accent active:bg-cell-pressed flex min-h-16 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border border-line-soft px-2 py-2 text-center transition-colors duration-100"
+      className="bg-surface hover:border-accent active:bg-cell-pressed relative flex min-h-16 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border border-line-soft px-2 py-2 text-center transition-colors duration-100"
     >
+      {cell.bonus && (
+        <span
+          title="Bonus tile — secret in play mode"
+          className="absolute top-1.5 right-1.5"
+        >
+          <Star size={12} className="text-dollar" fill="currentColor" />
+        </span>
+      )}
       {question ? (
         <span className="text-ink text-sm font-semibold">{truncate(question, 28)}</span>
       ) : (
