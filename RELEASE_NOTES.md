@@ -6,6 +6,19 @@
 <!-- Release prep = bump desktop/package.json + add a new section here, one commit. -->
 <!-- Plain lines and "- " bullets render best in-app. -->
 
+## v2.2.0
+
+Game night, upgraded:
+
+- ★ Bonus tiles — mark any tile as a secret Daily Double: it opens with a reveal splash and the host sets the wager
+- Sound effects — tile picks, correct dings, wrong buzzes, and a podium fanfare (press M to mute)
+- Finish game — podium finale with confetti and final standings, plus one-click play-again
+- The editor flags questions that are missing answers, and warns before you start playing
+- Undo and redo in the editor (Ctrl+Z / Ctrl+Y)
+- Duplicate as Double — instant round two with doubled values, scores carried over
+- Tidy media in Settings — clean up uploads no board uses anymore
+- About now shows the full version history, not just the latest notes
+
 ## v2.1.0
 
 Chaewon Jeopardy is back — rebuilt from the ground up. Same game you know, brand-new engine underneath:
