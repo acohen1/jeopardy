@@ -8,6 +8,26 @@
  */
 import raw from '../../../RELEASE_NOTES.md?raw'
 
+export interface NotesSection {
+  version: string
+  body: string
+}
+
+/** Every changelog section, newest first (the file's own order). */
+export function allNotes(): NotesSection[] {
+  const sections = raw.split(/^##\s+/m).slice(1)
+  const out: NotesSection[] = []
+  for (const section of sections) {
+    const newline = section.indexOf('\n')
+    const heading = (newline === -1 ? section : section.slice(0, newline)).trim()
+    const body = newline === -1 ? '' : section.slice(newline + 1).trim()
+    if (/^v\d/.test(heading) && body.length > 0) {
+      out.push({ version: heading.slice(1), body })
+    }
+  }
+  return out
+}
+
 /** Body of the changelog section for `version` (e.g. "2.1.0"), or null. */
 export function notesForVersion(version: string): string | null {
   // Sections start with "## vX.Y.Z"; everything before the first heading is

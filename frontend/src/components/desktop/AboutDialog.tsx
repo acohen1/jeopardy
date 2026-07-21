@@ -4,13 +4,14 @@
  *
  * Desktop-only: both surfaces render null in a plain browser.
  */
+import { ChevronDown } from 'lucide-react'
 import { useState } from 'react'
 
 import { Button } from '@/components/ui/Button'
 import { Dialog } from '@/components/ui/Dialog'
 import { Spinner } from '@/components/ui/Spinner'
 import { desktop, isDesktop } from '@/lib/desktop'
-import { notesForVersion } from '@/lib/releaseNotes'
+import { allNotes, notesForVersion } from '@/lib/releaseNotes'
 
 import { ReleaseNotes } from './notes'
 import { useUpdateState } from './useUpdateState'
@@ -51,12 +52,52 @@ function UpdateStatusLine() {
   }
 }
 
+/** Every past version's notes, collapsed by default under About. */
+function VersionHistory({ currentVersion }: { currentVersion: string }) {
+  const [expanded, setExpanded] = useState(false)
+  const history = allNotes().filter((s) => s.version !== currentVersion)
+
+  if (history.length === 0) return null
+
+  return (
+    <div className="border-line-soft mt-5 border-t pt-4">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="text-ink-muted hover:text-ink flex w-full cursor-pointer items-center gap-1.5 text-sm font-semibold transition-colors"
+      >
+        <ChevronDown
+          size={14}
+          className={`transition-transform duration-150 ${expanded ? '' : '-rotate-90'}`}
+          aria-hidden
+        />
+        Version history
+        <span className="text-ink-faint text-xs font-normal">
+          {history.length} earlier version{history.length === 1 ? '' : 's'}
+        </span>
+      </button>
+      {expanded && (
+        <div className="mt-3 max-h-72 space-y-5 overflow-y-auto pr-1">
+          {history.map((section) => (
+            <div key={section.version}>
+              <h4 className="font-display text-accent-bright mb-1.5 text-xs font-bold tracking-wide">
+                v{section.version}
+              </h4>
+              <ReleaseNotes notes={section.body} />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function AboutDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   if (!desktop) return null
 
-  // The app's own changelog section, baked in at build time — always
-  // available, offline, on fresh installs and long after the post-update
-  // What's-New was dismissed.
+  // The app's own changelog (whole cumulative file baked in at build time) —
+  // always available, offline, on fresh installs and long after the
+  // post-update What's-New was dismissed.
   const currentNotes = notesForVersion(desktop.appVersion)
 
   return (
@@ -92,6 +133,8 @@ export function AboutDialog({ open, onClose }: { open: boolean; onClose: () => v
             <ReleaseNotes notes={currentNotes} />
           </div>
         )}
+
+        <VersionHistory currentVersion={desktop.appVersion} />
 
         <p className="text-ink-faint mt-5 text-xs">
           Updates install automatically on restart.{' '}
