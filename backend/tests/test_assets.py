@@ -113,3 +113,36 @@ def test_store_asset_path_sanitizes_traversal(board, isolated_store):
     for name in ("../board.json", "..\\..\\secret.png", "/etc/passwd", "C:\\evil.png"):
         p = isolated_store.asset_path(bid, name)
         assert p.is_relative_to(assets), name
+
+
+# ------------------------------------------------------------------ #
+#  Orphaned-media report + tidy                                       #
+# ------------------------------------------------------------------ #
+def test_orphan_report_and_tidy(client, board, isolated_store):
+    import os
+    import time
+
+    bid = board["id"]
+    upload_asset(client, bid, "kept.png", PNG_BYTES)
+    upload_asset(client, bid, "orphan_old.png", PNG_BYTES + b"x")
+    upload_asset(client, bid, "orphan_fresh.png", PNG_BYTES + b"yy")
+
+    doc = client.get(f"/api/boards/{bid}").json()
+    doc["cells"][0][0]["question_slide"]["assets"] = [
+        {"path": "kept.png", "asset_type": "image", "volume": 0.3}
+    ]
+    client.put(f"/api/boards/{bid}", json=doc)
+
+    # Backdate one orphan past the safety window; the fresh one stays young.
+    old_path = isolated_store.assets_dir(bid) / "orphan_old.png"
+    stale = time.time() - 7200
+    os.utime(old_path, (stale, stale))
+
+    report = client.get("/api/boards/storage/orphans").json()
+    assert report["files"] == 1 and report["bytes"] == old_path.stat().st_size
+
+    freed = client.post("/api/boards/storage/tidy").json()
+    assert freed["files"] == 1
+    names = {p.name for p in isolated_store.assets_dir(bid).iterdir()}
+    # referenced + fresh survive; only the old orphan is gone
+    assert names == {"kept.png", "orphan_fresh.png"}

@@ -33,6 +33,18 @@ def list_boards() -> list[BoardSummary]:
     return store.list_boards()
 
 
+@router.get("/storage/orphans")
+def orphan_report() -> dict:
+    """Unreferenced media old enough to delete safely (count + bytes)."""
+    return store.orphan_report()
+
+
+@router.post("/storage/tidy")
+def tidy_media() -> dict:
+    """Delete orphaned media; returns {files, bytes} freed."""
+    return store.tidy_media()
+
+
 @router.post("", status_code=201)
 def create_board(req: CreateBoardRequest) -> Board:
     return store.create_board(req.name)

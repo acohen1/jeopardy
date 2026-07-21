@@ -20,6 +20,7 @@ import { Button } from '@/components/ui/Button'
 import { toast } from '@/components/ui/Toaster'
 import { useHotkeys } from '@/hooks/useHotkeys'
 import { money } from '@/lib/format'
+import { playSfx } from '@/lib/sfx'
 import type { Cell, Player } from '@/types/board'
 
 import { BonusSplash } from './BonusSplash'
@@ -89,6 +90,7 @@ export function ClueOverlay({
   const stake = isBonus ? wager : cell.value
 
   const award = (name: string) => {
+    playSfx('correct')
     onAward(name, stake)
     if (page === 'answer') {
       onClose()
@@ -98,6 +100,7 @@ export function ClueOverlay({
   }
 
   const deduct = (name: string) => {
+    playSfx('wrong')
     onAward(name, -stake)
     toast(`− ${money(stake)} → ${name}`, { kind: 'error' })
     setFlashName(name)

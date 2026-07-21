@@ -8,10 +8,12 @@ import { CellEditorDialog } from '@/components/editor/CellEditorDialog'
 import { EditorToolbar } from '@/components/editor/EditorToolbar'
 import { PlayerPanel } from '@/components/editor/PlayerPanel'
 import { useBoardDraft } from '@/components/editor/useBoardDraft'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { toast } from '@/components/ui/Toaster'
 import { usePageTitle } from '@/hooks/usePageTitle'
 import { money, truncate } from '@/lib/format'
-import { resizeBoard } from '@/types/board'
+import { anyModalOpen } from '@/lib/modalState'
+import { cellMissingAnswer, resizeBoard } from '@/types/board'
 import type { Board, Cell, Slide } from '@/types/board'
 
 export const Route = createFileRoute('/boards/$boardId/edit')({
@@ -30,8 +32,10 @@ function EditPage() {
 
 function Editor({ initial }: { initial: Board }) {
   const navigate = useNavigate()
-  const { board, status, update, flush } = useBoardDraft(initial)
+  const { board, status, update, flush, undo, redo, canUndo, canRedo } = useBoardDraft(initial)
   const [editing, setEditing] = useState<{ row: number; col: number } | null>(null)
+  // Non-null while the "some cells have no answer" pre-play warning is up.
+  const [playWarning, setPlayWarning] = useState<string | null>(null)
   usePageTitle(`${board.name} · Edit — Chaewon Jeopardy`)
 
   // Ctrl/Cmd+S — flush the debounced autosave right now. useHotkeys skips all
@@ -52,6 +56,32 @@ function Editor({ initial }: { initial: Board }) {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [flush])
+
+  // Ctrl/Cmd+Z → undo, Ctrl+Y / Ctrl+Shift+Z → redo. Another ctrl/meta chord,
+  // so again a bare window listener (useHotkeys skips chords by design).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return
+      const key = e.key.toLowerCase()
+      const isUndo = key === 'z' && !e.shiftKey
+      const isRedo = key === 'y' || (key === 'z' && e.shiftKey)
+      if (!isUndo && !isRedo) return
+      // While a dialog is open, undo belongs to the dialog's own fields.
+      if (anyModalOpen()) return
+      // In an input/textarea/contenteditable the native TEXT undo must win.
+      const t = e.target
+      if (
+        t instanceof HTMLElement &&
+        (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)
+      )
+        return
+      e.preventDefault()
+      if (isUndo) undo()
+      else redo()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [undo, redo])
 
   // In-session "max-extent" stash of everything a shrink has trimmed —
   // resizeBoard drops out-of-range cells/categories/values and autosave
@@ -95,16 +125,39 @@ function Editor({ initial }: { initial: Board }) {
     })
   }
 
-  const onPlay = () => {
-    if (board.players.length === 0) {
-      toast('Add at least one player before starting', { kind: 'error' })
-      return
-    }
+  const startPlay = () => {
     void flush().then((clean) => {
       if (clean) {
         void navigate({ to: '/boards/$boardId/play', params: { boardId: board.id } })
       }
     })
+  }
+
+  const onPlay = () => {
+    if (board.players.length === 0) {
+      toast('Add at least one player before starting', { kind: 'error' })
+      return
+    }
+    // Readiness check: cells with a question but no answer would be discovered
+    // live at game night — warn (but don't block) before starting.
+    const incomplete: string[] = []
+    board.cells.slice(0, board.num_rows).forEach((row) => {
+      row.slice(0, board.num_cols).forEach((cell, c) => {
+        if (cellMissingAnswer(cell)) {
+          const cat = board.categories[c]?.trim() || `Category ${c + 1}`
+          incomplete.push(`${truncate(cat, 24)} · ${money(cell.value)}`)
+        }
+      })
+    })
+    if (incomplete.length > 0) {
+      const shown = incomplete.slice(0, 5).join(', ')
+      const more = incomplete.length > 5 ? ` +${incomplete.length - 5} more` : ''
+      setPlayWarning(
+        `These cells have a question but no answer yet: ${shown}${more}.`,
+      )
+      return
+    }
+    startPlay()
   }
 
   const commitCell = (row: number, col: number, question: Slide, answer: Slide) => {
@@ -125,6 +178,10 @@ function Editor({ initial }: { initial: Board }) {
         numRows={board.num_rows}
         numCols={board.num_cols}
         status={status}
+        canUndo={canUndo}
+        canRedo={canRedo}
+        onUndo={undo}
+        onRedo={redo}
         onRename={(name) => update((b) => ({ ...b, name }))}
         onResize={onResize}
         onPlay={onPlay}
@@ -146,6 +203,18 @@ function Editor({ initial }: { initial: Board }) {
           }
         />
       </div>
+
+      <ConfirmDialog
+        open={playWarning !== null}
+        title="Some cells have no answer"
+        message={playWarning ?? ''}
+        confirmLabel="Play anyway"
+        onConfirm={() => {
+          setPlayWarning(null)
+          startPlay()
+        }}
+        onCancel={() => setPlayWarning(null)}
+      />
 
       {editing && editingCell && (
         <CellEditorDialog

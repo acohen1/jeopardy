@@ -68,6 +68,7 @@ export function HotkeysDialog({ open, onClose }: { open: boolean; onClose: () =>
           title="Play mode"
           rows={[
             { keys: ['P'], label: 'Present mode (TV fullscreen)' },
+            { keys: ['M'], label: 'Sound on/off' },
             { keys: ['Shift', '/'], label: 'This help (types "?") — works anywhere' },
           ]}
         />

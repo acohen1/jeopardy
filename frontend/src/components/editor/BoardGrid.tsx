@@ -3,7 +3,7 @@
  * toggle (star badge shown only in the editor — secret in play mode), plus
  * "Swap with…" any other row in the same column (slides move, values stay —
  * legacy parity). */
-import { Star } from 'lucide-react'
+import { Star, TriangleAlert } from 'lucide-react'
 import { Fragment, useEffect, useState } from 'react'
 
 import {
@@ -16,7 +16,7 @@ import { ContextMenu } from '@/components/ui/ContextMenu'
 import type { ContextMenuItem, ContextMenuState } from '@/components/ui/ContextMenu'
 import { toast } from '@/components/ui/Toaster'
 import { money, truncate } from '@/lib/format'
-import { emptySlide } from '@/types/board'
+import { cellMissingAnswer, emptySlide } from '@/types/board'
 import type { Board, Cell } from '@/types/board'
 
 export interface BoardGridProps {
@@ -252,6 +252,16 @@ function CellCard({
           className="absolute top-1.5 right-1.5"
         >
           <Star size={12} className="text-dollar" fill="currentColor" />
+        </span>
+      )}
+      {/* Readiness nudge — question written, answer still empty. Bottom-right
+          so it coexists with the bonus star at top-right. */}
+      {cellMissingAnswer(cell) && (
+        <span
+          title="Has a question but no answer yet"
+          className="absolute right-1.5 bottom-1.5"
+        >
+          <TriangleAlert size={11} className="text-dollar" />
         </span>
       )}
       {question ? (

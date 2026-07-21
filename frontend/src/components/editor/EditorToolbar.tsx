@@ -1,7 +1,17 @@
 /** Editor toolbar — back link, inline board name, size steppers, autosave
  * status chip, and the Play launcher. */
 import { Link } from '@tanstack/react-router'
-import { ArrowLeft, Check, LoaderCircle, Minus, Play, Plus, TriangleAlert } from 'lucide-react'
+import {
+  ArrowLeft,
+  Check,
+  LoaderCircle,
+  Minus,
+  Play,
+  Plus,
+  Redo2,
+  TriangleAlert,
+  Undo2,
+} from 'lucide-react'
 
 import { Button } from '@/components/ui/Button'
 import type { SaveStatus } from '@/components/editor/useBoardDraft'
@@ -11,6 +21,10 @@ export interface EditorToolbarProps {
   numRows: number
   numCols: number
   status: SaveStatus
+  canUndo: boolean
+  canRedo: boolean
+  onUndo: () => void
+  onRedo: () => void
   onRename: (name: string) => void
   onResize: (rows: number, cols: number) => void
   onPlay: () => void
@@ -21,6 +35,10 @@ export function EditorToolbar({
   numRows,
   numCols,
   status,
+  canUndo,
+  canRedo,
+  onUndo,
+  onRedo,
   onRename,
   onResize,
   onPlay,
@@ -47,6 +65,31 @@ export function EditorToolbar({
 
       <Stepper label="Rows" value={numRows} min={1} max={10} onChange={(v) => onResize(v, numCols)} />
       <Stepper label="Cols" value={numCols} min={1} max={12} onChange={(v) => onResize(numRows, v)} />
+
+      <div className="flex items-center gap-1">
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={!canUndo}
+          onClick={onUndo}
+          title="Undo (Ctrl+Z)"
+          aria-label="Undo"
+          className="px-1.5 py-1.5"
+        >
+          <Undo2 size={14} />
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={!canRedo}
+          onClick={onRedo}
+          title="Redo (Ctrl+Y)"
+          aria-label="Redo"
+          className="px-1.5 py-1.5"
+        >
+          <Redo2 size={14} />
+        </Button>
+      </div>
 
       <div className="ml-auto flex items-center gap-3">
         <StatusChip status={status} />

@@ -8,8 +8,8 @@
 import { useSuspenseQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { clsx } from 'clsx'
-import { ArrowLeft, Minimize2, Presentation, RotateCcw } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { ArrowLeft, Flag, Minimize2, Presentation, RotateCcw, Volume2, VolumeX } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import type { MouseEvent as ReactMouseEvent } from 'react'
 
 import { boardQuery, useGameActions } from '@/api/boards'
@@ -18,11 +18,14 @@ import { usePageTitle } from '@/hooks/usePageTitle'
 import { Button } from '@/components/ui/Button'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { ContextMenu, type ContextMenuState } from '@/components/ui/ContextMenu'
+import { toast } from '@/components/ui/Toaster'
 import { money, truncate } from '@/lib/format'
-import type { Cell } from '@/types/board'
+import { isMuted, playSfx, useSfxMuted } from '@/lib/sfx'
+import { cellIsFilled, type Cell } from '@/types/board'
 
 import { BoardGrid } from './BoardGrid'
 import { ClueOverlay } from './ClueOverlay'
+import { PodiumOverlay } from './PodiumOverlay'
 import { Scoreboard } from './Scoreboard'
 
 interface OverlayState {
@@ -42,6 +45,8 @@ export function PlayMode({ boardId }: { boardId: string }) {
   const [confirmBoardReset, setConfirmBoardReset] = useState(false)
   const [confirmScoreReset, setConfirmScoreReset] = useState(false)
   const [presenting, setPresenting] = useState(false)
+  const [podium, setPodium] = useState(false)
+  const [sfxMuted, toggleSfxMuted] = useSfxMuted()
 
   // Present mode is fullscreen-backed: whatever way fullscreen ends (native
   // Esc, our exit button, 'P') the chrome comes back via this listener.
@@ -62,6 +67,14 @@ export function PlayMode({ boardId }: { boardId: string }) {
   // 'P' toggles present mode only while the clue overlay is closed.
   useHotkeys({ p: togglePresent }, { enabled: overlay === null })
 
+  // 'M' toggles sounds ALWAYS on the play page — no other binding uses it,
+  // and it must reach the host even mid-clue or over a confirm dialog.
+  const toggleSounds = () => {
+    toggleSfxMuted()
+    toast(isMuted() ? 'Sounds off' : 'Sounds on')
+  }
+  useHotkeys({ m: toggleSounds }, { allowInModals: true })
+
   const openOverlay = (row: number, col: number) => {
     const cell = board.cells[row]?.[col]
     if (cell) setOverlay({ row, col, cell })
@@ -69,9 +82,22 @@ export function PlayMode({ boardId }: { boardId: string }) {
 
   const onOpenCell = (row: number, col: number) => {
     // Legacy parity: the cell is marked used the moment it opens, not on award.
+    playSfx('pick')
     openOverlay(row, col)
     actions.setCellUsed.mutate([row, col, true])
   }
+
+  // One-time nudge (per mount): every filled clue has been played and nothing
+  // is on screen — suggest the podium.
+  const suggestedFinishRef = useRef(false)
+  useEffect(() => {
+    if (suggestedFinishRef.current || overlay !== null || podium) return
+    const filled = board.cells.flat().filter(cellIsFilled)
+    if (filled.length > 0 && filled.every((c) => c.used)) {
+      suggestedFinishRef.current = true
+      toast('All clues played — hit Finish for the podium 🏆', { duration: 4000 })
+    }
+  }, [board, overlay, podium])
 
   const onUsedCellMenu = (e: ReactMouseEvent, row: number, col: number) => {
     setMenu({
@@ -117,12 +143,25 @@ export function PlayMode({ boardId }: { boardId: string }) {
           </h1>
           <p className="text-ink-muted mt-0.5 text-xs">{board.name}</p>
         </div>
-        <div className="flex justify-end">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           {!presenting && (
-            <Button variant="soft" onClick={togglePresent} title="Present mode [P]">
-              <Presentation className="size-4" />
-              Present
-            </Button>
+            <>
+              <Button variant="ghost" onClick={toggleSounds} title="Sounds [M]">
+                {sfxMuted ? <VolumeX className="size-4" /> : <Volume2 className="size-4" />}
+              </Button>
+              <Button
+                variant="soft"
+                onClick={() => setPodium(true)}
+                title="Finish game — show the podium"
+              >
+                <Flag className="size-4" />
+                Finish
+              </Button>
+              <Button variant="soft" onClick={togglePresent} title="Present mode [P]">
+                <Presentation className="size-4" />
+                Present
+              </Button>
+            </>
           )}
         </div>
       </header>
@@ -169,6 +208,18 @@ export function PlayMode({ boardId }: { boardId: string }) {
             actions.award.mutate([name, delta, note])
           }}
           onClose={() => setOverlay(null)}
+        />
+      )}
+
+      {/* ---- Podium (works during present mode — it's FOR the TV) ---- */}
+      {podium && (
+        <PodiumOverlay
+          players={board.players}
+          onPlayAgain={() => {
+            actions.resetScores.mutate([])
+            actions.resetUsed.mutate([])
+          }}
+          onClose={() => setPodium(false)}
         />
       )}
 

@@ -85,6 +85,12 @@ export function cellIsFilled(cell: Cell): boolean {
   return slideIsFilled(cell.question_slide) || slideIsFilled(cell.answer_slide)
 }
 
+/** Authoring gap: a question exists but no answer — worth flagging before
+ * someone discovers it live at game night. */
+export function cellMissingAnswer(cell: Cell): boolean {
+  return slideIsFilled(cell.question_slide) && !slideIsFilled(cell.answer_slide)
+}
+
 /**
  * Number of collage cells a slide's assets occupy — a stacked-audio group of
  * 2+ clips collapses into a single cell (mirrors legacy SlideGrid).

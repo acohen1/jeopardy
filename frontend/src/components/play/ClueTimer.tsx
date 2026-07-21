@@ -3,7 +3,7 @@
  *  - Click or 'T' starts/restarts; running state renders an SVG ring that
  *    drains smoothly with the remaining whole seconds centered.
  *  - At zero: ring + number turn danger and pulse, plus a soft double beep
- *    (WebAudio, context created lazily on the first user-initiated start).
+ *    (playSfx('timeUp') — governed by the app-wide sfx mute).
  *    Stays expired until clicked again (restart).
  *  - Right-click → preset menu (10/20/30/60s) which persists + starts.
  * Duration persists in localStorage 'clue-timer-duration'. Mounted outside
@@ -16,6 +16,7 @@ import type { MouseEvent as ReactMouseEvent } from 'react'
 import { Button } from '@/components/ui/Button'
 import { ContextMenu, type ContextMenuState } from '@/components/ui/ContextMenu'
 import { useHotkeys } from '@/hooks/useHotkeys'
+import { playSfx } from '@/lib/sfx'
 
 const STORAGE_KEY = 'clue-timer-duration'
 const PRESETS = [10, 20, 30, 60]
@@ -39,48 +40,10 @@ export function ClueTimer() {
   const [menu, setMenu] = useState<ContextMenuState | null>(null)
 
   const intervalRef = useRef<number | undefined>(undefined)
-  const audioRef = useRef<AudioContext | null>(null)
 
-  useEffect(
-    () => () => {
-      window.clearInterval(intervalRef.current)
-      void audioRef.current?.close().catch(() => undefined)
-    },
-    [],
-  )
-
-  /** Soft double beep: ~660Hz then ~520Hz, ~120ms each, low gain. */
-  const beep = () => {
-    try {
-      const ctx = audioRef.current
-      if (!ctx) return
-      const t0 = ctx.currentTime
-      for (const [freq, at] of [
-        [660, 0],
-        [520, 0.15],
-      ] as const) {
-        const osc = ctx.createOscillator()
-        const gain = ctx.createGain()
-        osc.type = 'sine'
-        osc.frequency.value = freq
-        gain.gain.setValueAtTime(0.12, t0 + at)
-        gain.gain.exponentialRampToValueAtTime(0.001, t0 + at + 0.12)
-        osc.connect(gain).connect(ctx.destination)
-        osc.start(t0 + at)
-        osc.stop(t0 + at + 0.13)
-      }
-    } catch {
-      // Audio unavailable — the visual expiry state is enough.
-    }
-  }
+  useEffect(() => () => window.clearInterval(intervalRef.current), [])
 
   const start = (secs = duration) => {
-    // Create the AudioContext inside a user gesture so the beep may play later.
-    try {
-      audioRef.current ??= new AudioContext()
-    } catch {
-      // No WebAudio — timer still works silently.
-    }
     window.clearInterval(intervalRef.current)
     const end = Date.now() + secs * 1000
     setStatus('running')
@@ -91,7 +54,7 @@ export function ClueTimer() {
         window.clearInterval(intervalRef.current)
         setRemaining(0)
         setStatus('expired')
-        beep()
+        playSfx('timeUp')
       } else {
         setRemaining(rem)
       }

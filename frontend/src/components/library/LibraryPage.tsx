@@ -13,8 +13,9 @@ import {
   exportBoardUrl,
   importBoard,
   renameBoard,
+  saveBoard,
 } from '@/api/boards'
-import { ApiError } from '@/api/client'
+import { ApiError, api } from '@/api/client'
 import { VersionChip } from '@/components/desktop/AboutDialog'
 import { SettingsButton } from '@/components/desktop/SettingsDialog'
 import { UpdatePill } from '@/components/desktop/UpdatePill'
@@ -23,7 +24,7 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { ContextMenu, type ContextMenuState } from '@/components/ui/ContextMenu'
 import { Spinner } from '@/components/ui/Spinner'
 import { toast } from '@/components/ui/Toaster'
-import type { BoardSummary } from '@/types/board'
+import type { Board, BoardSummary } from '@/types/board'
 
 import { BoardCard } from './BoardCard'
 import { NameDialog } from './NameDialog'
@@ -85,6 +86,29 @@ export function LibraryPage() {
     onError: errorToast,
   })
 
+  // "Round 2" copy: values ×2, all cells fresh (used=false) — but players and
+  // their scores CARRY OVER on purpose, so the double round continues the game.
+  const doubleMut = useMutation({
+    mutationFn: async (board: BoardSummary) => {
+      const copy = await duplicateBoard(board.id)
+      const full = await api.get<Board>(`/api/boards/${copy.id}`)
+      const doubled: Board = {
+        ...full,
+        name: `${board.name} — Double`,
+        row_values: full.row_values.map((v) => v * 2),
+        cells: full.cells.map((row) =>
+          row.map((cell) => ({ ...cell, value: cell.value * 2, used: false })),
+        ),
+      }
+      return saveBoard(doubled)
+    },
+    onSuccess: (saved) => {
+      invalidate()
+      toast(`Created “${saved.name}” — values doubled, scores carried over`, { kind: 'success' })
+    },
+    onError: errorToast,
+  })
+
   const deleteMut = useMutation({
     mutationFn: (board: BoardSummary) => deleteBoard(board.id),
     onSuccess: () => {
@@ -116,6 +140,7 @@ export function LibraryPage() {
       items: [
         { label: 'Rename…', onSelect: () => setRenaming(board) },
         { label: 'Duplicate', onSelect: () => duplicateMut.mutate(board) },
+        { label: 'Duplicate as Double (2×)', onSelect: () => doubleMut.mutate(board) },
         { label: 'Export', onSelect: () => downloadExport(board.id) },
         { type: 'separator' },
         { label: 'Delete…', danger: true, onSelect: () => setDeleting(board) },

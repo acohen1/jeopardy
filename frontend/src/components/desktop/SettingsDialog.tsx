@@ -1,13 +1,18 @@
 /** Settings dialog (desktop only): where boards are stored, and LAN/TV access.
  * Opened from the gear button next to the version chip on the library page. */
-import { FolderOpen, FolderSync, Settings, Tv } from 'lucide-react'
+import { FolderOpen, FolderSync, Settings, Trash2, Tv } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 
+import { api } from '@/api/client'
 import { Button } from '@/components/ui/Button'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { Dialog } from '@/components/ui/Dialog'
 import { Spinner } from '@/components/ui/Spinner'
 import { toast } from '@/components/ui/Toaster'
 import { desktop, isDesktop } from '@/lib/desktop'
+
+/** bytes → MB with 1 decimal, e.g. "12.4". */
+const mb = (bytes: number) => (bytes / (1024 * 1024)).toFixed(1)
 
 /** Data-directory section: where boards live, open it, relocate it. */
 function StorageSection({ open }: { open: boolean }) {
@@ -16,16 +21,39 @@ function StorageSection({ open }: { open: boolean }) {
   )
   const [busy, setBusy] = useState(false)
 
+  // Orphaned-media report ("tidy up"): unused files old enough to delete.
+  const [orphans, setOrphans] = useState<{ files: number; bytes: number } | null>(null)
+  const [tidyConfirm, setTidyConfirm] = useState(false)
+  const [tidying, setTidying] = useState(false)
+
   const refresh = useCallback(() => {
     desktop?.storage
       .getInfo()
       .then(setInfo)
+      .catch(() => {})
+    api
+      .get<{ files: number; bytes: number }>('/api/boards/storage/orphans')
+      .then(setOrphans)
       .catch(() => {})
   }, [])
 
   useEffect(() => {
     if (open) refresh()
   }, [open, refresh])
+
+  const tidy = async () => {
+    setTidyConfirm(false)
+    setTidying(true)
+    try {
+      const freed = await api.post<{ files: number; bytes: number }>('/api/boards/storage/tidy')
+      toast(`Freed ${mb(freed.bytes)} MB`, { kind: 'success' })
+      refresh() // both the orphan line and the storage info
+    } catch {
+      toast('Could not tidy media', { kind: 'error' })
+    } finally {
+      setTidying(false)
+    }
+  }
 
   if (!info) return null
 
@@ -83,6 +111,32 @@ function StorageSection({ open }: { open: boolean }) {
           </Button>
         )}
       </div>
+
+      {orphans !== null &&
+        (orphans.files > 0 ? (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <span className="text-ink-muted text-xs">
+              {orphans.files} unused media file{orphans.files === 1 ? '' : 's'} ·{' '}
+              {mb(orphans.bytes)} MB
+            </span>
+            <Button variant="soft" size="sm" disabled={tidying} onClick={() => setTidyConfirm(true)}>
+              {tidying ? <Spinner className="size-3.5" /> : <Trash2 size={13} />}
+              Tidy up
+            </Button>
+          </div>
+        ) : (
+          <p className="text-ink-faint mt-3 text-xs">No unused media.</p>
+        ))}
+
+      <ConfirmDialog
+        open={tidyConfirm}
+        title="Tidy media"
+        message={`Delete ${orphans?.files ?? 0} unused file(s)? Media added in the last hour is never touched.`}
+        confirmLabel="Delete"
+        danger
+        onConfirm={() => void tidy()}
+        onCancel={() => setTidyConfirm(false)}
+      />
     </section>
   )
 }

@@ -128,7 +128,8 @@ class BoardStore:
             p = d / "board.json"
             if p.is_file():
                 try:
-                    out.append(summarize(self._read(p)))
+                    with self._lock:  # never read a mid-replace file (Windows)
+                        out.append(summarize(self._read(p)))
                 except Exception:
                     continue  # skip corrupt entries rather than break the library
         out.sort(key=lambda s: s.updated_at, reverse=True)
@@ -141,10 +142,14 @@ class BoardStore:
         return board
 
     def get_board(self, board_id: str) -> Board:
-        p = self._board_path(board_id)
-        if not p.is_file():
-            raise BoardNotFound(board_id)
-        return self._read(p)
+        # Reads share the write lock: on Windows, opening board.json while
+        # another thread's os.replace() swaps it raises a sharing-violation
+        # PermissionError (surfaced as flaky 500s under concurrent awards).
+        with self._lock:
+            p = self._board_path(board_id)
+            if not p.is_file():
+                raise BoardNotFound(board_id)
+            return self._read(p)
 
     def save_board(self, board: Board) -> Board:
         with self._lock:
@@ -234,6 +239,62 @@ class BoardStore:
                         if _is_safe_asset_name(a.path):
                             seen.setdefault(a.path)
         return list(seen)
+
+    # ------------------------------------------------------------------ #
+    #  Orphaned media (uploaded but no longer referenced by any slide)   #
+    # ------------------------------------------------------------------ #
+    # Only files older than this are eligible: an upload sitting in an
+    # unsaved cell-editor draft is unreferenced *by design* until Save, and
+    # must never be swept out from under the user.
+    ORPHAN_MIN_AGE_SECONDS = 3600
+
+    def _iter_orphans(self):
+        import time
+
+        cutoff = time.time() - self.ORPHAN_MIN_AGE_SECONDS
+        for d in sorted(self.boards_dir.iterdir()) if self.boards_dir.exists() else []:
+            board_json = d / "board.json"
+            assets = d / "assets"
+            if not board_json.is_file() or not assets.is_dir():
+                continue
+            try:
+                with self._lock:
+                    referenced = set(self.referenced_assets(self._read(board_json)))
+            except Exception:
+                continue  # never sweep a board we can't parse
+            for f in assets.iterdir():
+                try:
+                    if (
+                        f.is_file()
+                        and f.name not in referenced
+                        and not f.name.startswith("board.json")
+                        and f.stat().st_mtime < cutoff
+                    ):
+                        yield f
+                except OSError:
+                    continue
+
+    def orphan_report(self) -> dict:
+        files = 0
+        size = 0
+        for f in self._iter_orphans():
+            files += 1
+            size += f.stat().st_size
+        return {"files": files, "bytes": size}
+
+    def tidy_media(self) -> dict:
+        """Delete orphaned media (old enough to be safe). Returns what was freed."""
+        with self._lock:
+            files = 0
+            size = 0
+            for f in list(self._iter_orphans()):
+                try:
+                    size += f.stat().st_size
+                    f.unlink()
+                    files += 1
+                except OSError:
+                    continue
+            return {"files": files, "bytes": size}
 
     # ------------------------------------------------------------------ #
     #  Export / import (save packages)                                   #

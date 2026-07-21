@@ -186,12 +186,21 @@ def test_put_sanitizes_player_names(client, board):
 def test_concurrent_awards_do_not_lose_updates(client, board):
     import threading
 
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
     bid = board["id"]
     client.post(f"/api/boards/{bid}/players", json={"name": "P"})
 
     def hit():
-        for _ in range(10):
-            client.post(f"/api/boards/{bid}/players/P/award", json={"delta": 10})
+        # One TestClient per thread for TRUE request parallelism (a shared
+        # client partially serializes and hides races). TestClient re-raises
+        # server exceptions in the sending thread — which is exactly how this
+        # test caught the unlocked-read-vs-os.replace PermissionError race.
+        with TestClient(app) as local:
+            for _ in range(10):
+                local.post(f"/api/boards/{bid}/players/P/award", json={"delta": 10})
 
     threads = [threading.Thread(target=hit) for _ in range(4)]
     for t in threads:
