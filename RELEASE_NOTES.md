@@ -9,6 +9,15 @@
 <!-- Release prep = bump desktop/package.json + add a new section here, one commit. -->
 <!-- Plain lines and "- " bullets render best in-app. -->
 
+## v2.2.2
+
+Updates, but make them smooth:
+
+- Hitting Restart on an update now installs silently and relaunches the app — no more setup wizard mid-update (it still greets first-time installs)
+- Checking for updates while a new version is still being published now says exactly that, instead of a wall of error text
+- Fixed "What's new" and Version history showing the wrong notes after an update
+- The installer clears lingering background processes before updating, so updates stay reliable even from much older versions
+
 ## v2.2.1
 
 - Fixes the app failing to start after an update on some machines ("spawn UNKNOWN") — updates now install reliably
