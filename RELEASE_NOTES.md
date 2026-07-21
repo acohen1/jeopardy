@@ -1,15 +1,18 @@
-<!-- Cumulative changelog — NEWEST version section on top; keep the old ones. -->
-<!-- HOW IT WORKS: when main is pushed with a new version in desktop/package.json, -->
-<!-- the release workflow ships ONLY the section whose heading matches that version -->
-<!-- (e.g. "## v2.2.1
+<!-- Cumulative changelog - NEWEST version section on top; keep the old ones. -->
+<!-- Each release section starts with a line containing only "##", a space, and -->
+<!-- the version with a leading v - nothing else on that line, ever. Do NOT put -->
+<!-- that pattern anywhere else in this file (including these comments): the -->
+<!-- release workflow and the in-app parser both treat it as a section start. -->
+<!-- The workflow ships ONLY the section matching desktop/package.json's version -->
+<!-- as the release body / in-app "What's new", and FAILS the release if that -->
+<!-- section is missing - notes can't be stale or forgotten. -->
+<!-- Release prep = bump desktop/package.json + add a new section here, one commit. -->
+<!-- Plain lines and "- " bullets render best in-app. -->
+
+## v2.2.1
 
 - Fixes the app failing to start after an update on some machines ("spawn UNKNOWN") — updates now install reliably
 - If anything does go wrong, the app now explains what happened and keeps a log to help us fix it
-
-## v2.2.0") as the release body / in-app "What's new". No matching -->
-<!-- section = auto-generated notes are used instead, so stale notes can't ship. -->
-<!-- Release prep = bump desktop/package.json + add a new section here, one commit. -->
-<!-- Plain lines and "- " bullets render best in-app. -->
 
 ## v2.2.0
 

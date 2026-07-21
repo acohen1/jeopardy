@@ -78,34 +78,32 @@ jobs:
           uv sync
           uv run pyinstaller jeopardy-backend.spec --noconfirm
 
-      - name: Create release (authored notes when RELEASE_NOTES.md matches this version)
+      - name: Create release (RELEASE_NOTES.md section for this version is REQUIRED)
         if: steps.guard.outputs.skip == 'false'
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $v = "${{ steps.version.outputs.version }}"
-          $useFile = $false
-          if (Test-Path RELEASE_NOTES.md) {
-            # Staleness guard: only use authored notes written FOR this version.
-            $content = Get-Content RELEASE_NOTES.md -Raw
-            if ($content -match "(?m)^##\s*v$([regex]::Escape($v))\s*$") { $useFile = $true }
+          if (-not (Test-Path RELEASE_NOTES.md)) {
+            Write-Error "RELEASE_NOTES.md is missing - every release ships authored notes."
+            exit 1
           }
-          if ($useFile) {
-            Write-Host "Using authored RELEASE_NOTES.md for v$v"
-            # RELEASE_NOTES.md is a cumulative changelog (newest section on
-            # top). Ship ONLY this version's section: from its heading to the
-            # next "## v" heading — never the instruction comments above it,
-            # never older versions below it.
-            $content = Get-Content RELEASE_NOTES.md -Raw
-            $m = [regex]::Match($content, "(?ms)^##\s*v$([regex]::Escape($v))\s*$\s*(.*?)(?=^##\s*v|\z)")
-            $body = "## v$v`n`n" + $m.Groups[1].Value.Trim()
-            Set-Content -Path release-body.md -Value $body -Encoding utf8
-            gh release create "v$v" --title "Chaewon Jeopardy v$v" --notes-file release-body.md
-          } else {
-            Write-Host "RELEASE_NOTES.md missing or not written for v$v - using auto-generated notes"
-            gh release create "v$v" --title "Chaewon Jeopardy v$v" --generate-notes
+          # RELEASE_NOTES.md is a cumulative changelog (newest section on top).
+          # Ship ONLY this version's section: from its heading to the next
+          # "## v" heading. HTML comments are stripped FIRST so instruction
+          # text can never match or leak into a release body (v2.2.1 shipped
+          # with its section spliced inside the comment block, silently fell
+          # back to auto-generated notes, and users saw "Full Changelog: ...").
+          $content = (Get-Content RELEASE_NOTES.md -Raw) -replace '(?s)<!--.*?-->', ''
+          $m = [regex]::Match($content, "(?ms)^##\s*v$([regex]::Escape($v))\s*$\s*(.*?)(?=^##\s*v|\z)")
+          if (-not $m.Success -or -not $m.Groups[1].Value.Trim()) {
+            Write-Error "RELEASE_NOTES.md has no '## v$v' section - add one (newest on top) and push again. Failing rather than publishing wrong notes."
+            exit 1
           }
+          $body = "## v$v`n`n" + $m.Groups[1].Value.Trim()
+          Set-Content -Path release-body.md -Value $body -Encoding utf8
+          gh release create "v$v" --title "Chaewon Jeopardy v$v" --notes-file release-body.md
           exit 0
 
       - name: Build installer and upload to the release

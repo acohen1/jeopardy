@@ -485,6 +485,22 @@ function stripHtml(s) {
     .trim();
 }
 
+/** Translate electron-updater failures into one short human sentence; the
+ *  raw errors are multi-line HTTP dumps. Full detail always goes to shell.log. */
+function friendlyUpdateError(err) {
+  const raw = err && err.message ? err.message : String(err);
+  shellLog(`update check failed: ${raw}`);
+  // latest.yml 404 = a release is mid-publish (the tag exists but artifacts
+  // are still uploading) — the only time an installed app can see this.
+  if (/latest\.yml/i.test(raw) && /404/.test(raw)) {
+    return 'A new update is being published right now — hang tight and check again in a few minutes.';
+  }
+  if (/ERR_INTERNET_DISCONNECTED|ERR_NAME_NOT_RESOLVED|ERR_CONNECTION|ERR_NETWORK|ENOTFOUND|ETIMEDOUT|ECONNRESET|EAI_AGAIN/i.test(raw)) {
+    return "Couldn't reach the update server — check your internet connection and try again.";
+  }
+  return raw.split('\n', 1)[0];
+}
+
 function setupAutoUpdater() {
   if (!autoUpdater) return;
 
@@ -528,11 +544,12 @@ function setupAutoUpdater() {
   autoUpdater.on('error', (err) => {
     const wasManual = manualCheckInFlight;
     manualCheckInFlight = false;
+    const message = friendlyUpdateError(err); // always logs full detail
     if (wasManual) {
       // Only a MANUAL check surfaces errors...
-      setUpdateState({ phase: 'error', message: err && err.message ? err.message : String(err) });
+      setUpdateState({ phase: 'error', message });
     } else {
-      // ...a failing silent auto-check (e.g. no feed configured yet) stays idle.
+      // ...a failing silent auto-check (offline, mid-publish) stays idle.
       setUpdateState({ phase: 'idle' });
     }
   });
@@ -559,7 +576,7 @@ function checkForUpdates(manual) {
     const wasManual = manualCheckInFlight;
     manualCheckInFlight = false;
     if (wasManual) {
-      setUpdateState({ phase: 'error', message: err && err.message ? err.message : String(err) });
+      setUpdateState({ phase: 'error', message: friendlyUpdateError(err) });
     } else {
       setUpdateState({ phase: 'idle' });
     }
@@ -624,7 +641,10 @@ ipcMain.on('jeopardy:update-restart', () => {
   // process (incl. orphans from old crashes) still holding the exe makes the
   // installer silently skip locked files → corrupt install → spawn UNKNOWN.
   killStrayBackends('pre-update');
-  autoUpdater.quitAndInstall();
+  // Silent install + relaunch (Discord-style). Without isSilent the assisted
+  // installer pops its full wizard on every update; the wizard should only
+  // ever greet a first-time install.
+  autoUpdater.quitAndInstall(true, true);
 });
 
 ipcMain.handle('jeopardy:whats-new', () => whatsNew);

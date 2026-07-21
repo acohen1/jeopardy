@@ -8,6 +8,7 @@ import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Dialog } from '@/components/ui/Dialog'
 import { desktop, type WhatsNew } from '@/lib/desktop'
+import { notesForVersion } from '@/lib/releaseNotes'
 
 import { ReleaseNotes } from './notes'
 
@@ -47,7 +48,10 @@ export function WhatsNewDialog() {
       className="w-full max-w-md"
     >
       <div className="px-5 py-4">
-        <ReleaseNotes notes={whatsNew.notes} />
+        {/* Baked-in notes are authoritative (same commit as this build); the
+            shell's copy came from the update feed at download time and can be
+            wrong when a release was published with fallback notes. */}
+        <ReleaseNotes notes={notesForVersion(whatsNew.toVersion) ?? whatsNew.notes} />
         <div className="mt-5 flex justify-end">
           <Button variant="primary" onClick={dismiss}>
             Nice
