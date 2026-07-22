@@ -54,6 +54,10 @@ export function BonusSplash({
 }: BonusSplashProps) {
   const [raw, setRaw] = useState(String(tileValue))
   const [wagerer, setWagerer] = useState<string | null>(initialWagerer)
+  // Turn order usually KNOWS who found the tile — state it, don't ask.
+  // The full picker only appears when control is unassigned (host-decides
+  // flows) or the host taps "Someone else?".
+  const [showPicker, setShowPicker] = useState(initialWagerer === null)
 
   const selected = players.find((p) => p.name === wagerer) ?? null
   /** Real Daily Double rule: even at $0 (or below) you can risk the board's
@@ -113,37 +117,58 @@ export function BonusSplash({
         <p className="text-ink-faint text-sm">Tile value: {money(tileValue)}</p>
       </div>
 
-      {players.length > 0 && (
-        <div className="space-y-2.5 text-center">
-          <p className="text-ink-muted text-sm">Who&rsquo;s wagering?</p>
-          <div className="flex max-w-2xl flex-wrap justify-center gap-2">
-            {players.map((p) => (
-              <button
-                key={p.name}
-                type="button"
-                data-testid={`wagerer-${p.name}`}
-                onClick={() => setWagerer(p.name)}
-                className={clsx(
-                  'cursor-pointer rounded-lg border px-3 py-1.5 text-sm transition-colors duration-100',
-                  p.name === wagerer
-                    ? 'border-dollar bg-dollar/15 text-dollar'
-                    : 'border-line/60 text-ink-muted hover:border-line hover:text-ink',
-                )}
-              >
-                {p.name}
-                <span className={clsx('ml-2', p.score < 0 && 'text-danger')}>
-                  {money(p.score)}
-                </span>
-              </button>
-            ))}
+      {players.length > 0 &&
+        (showPicker ? (
+          <div className="space-y-2.5 text-center">
+            <p className="text-ink-muted text-sm">Who&rsquo;s wagering?</p>
+            <div className="flex max-w-2xl flex-wrap justify-center gap-2">
+              {players.map((p) => (
+                <button
+                  key={p.name}
+                  type="button"
+                  data-testid={`wagerer-${p.name}`}
+                  onClick={() => setWagerer(p.name)}
+                  className={clsx(
+                    'cursor-pointer rounded-lg border px-3 py-1.5 text-sm transition-colors duration-100',
+                    p.name === wagerer
+                      ? 'border-dollar bg-dollar/15 text-dollar'
+                      : 'border-line/60 text-ink-muted hover:border-line hover:text-ink',
+                  )}
+                >
+                  {p.name}
+                  <span className={clsx('ml-2', p.score < 0 && 'text-danger')}>
+                    {money(p.score)}
+                  </span>
+                </button>
+              ))}
+            </div>
+            {selected && cap !== null && (
+              <p className="text-ink-faint text-xs">
+                {selected.name} can wager up to <span className="text-dollar">{money(cap)}</span>
+              </p>
+            )}
           </div>
-          {selected && cap !== null && (
-            <p className="text-ink-faint text-xs">
-              {selected.name} can wager up to <span className="text-dollar">{money(cap)}</span>
+        ) : (
+          <div className="space-y-1 text-center" data-testid="wagerer-known">
+            <p className="text-ink text-lg">
+              <span className="text-dollar font-semibold">{selected?.name ?? wagerer}</span>{' '}
+              is wagering
+              {cap !== null && (
+                <span className="text-ink-muted">
+                  {' '}
+                  — up to <span className="text-dollar">{money(cap)}</span>
+                </span>
+              )}
             </p>
-          )}
-        </div>
-      )}
+            <button
+              type="button"
+              onClick={() => setShowPicker(true)}
+              className="text-ink-faint hover:text-ink cursor-pointer text-xs underline decoration-dotted underline-offset-4"
+            >
+              Someone else?
+            </button>
+          </div>
+        ))}
 
       <form onSubmit={submit} className="flex flex-col items-center gap-6">
         <div className="flex flex-wrap items-center justify-center gap-3">

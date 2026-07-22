@@ -89,6 +89,19 @@ export function ClueOverlay({
 
   useEffect(() => () => window.clearTimeout(flashTimer.current), [])
 
+  /* Browsers exit fullscreen on Esc BEFORE (or without) delivering the
+   * keydown — so in Present mode one press would exit fullscreen AND close
+   * the overlay. Remember when fullscreen last ended and swallow the Esc
+   * that caused it; the next press closes the overlay as usual. */
+  const lastFsExitRef = useRef(0)
+  useEffect(() => {
+    const onFsChange = () => {
+      if (!document.fullscreenElement) lastFsExitRef.current = Date.now()
+    }
+    document.addEventListener('fullscreenchange', onFsChange)
+    return () => document.removeEventListener('fullscreenchange', onFsChange)
+  }, [])
+
   /* ---- Hosted-session buzzers (no-ops entirely when not hosting) ---- */
   const hosting = buzzer != null && onBuzzerCommand != null
 
@@ -126,6 +139,8 @@ export function ClueOverlay({
       // While a video is fullscreen, Esc only exits fullscreen (natively) —
       // it must not also close the whole overlay.
       if (document.fullscreenElement) return
+      // ...and the Esc that just ENDED fullscreen (Present mode) is spent.
+      if (Date.now() - lastFsExitRef.current < 500) return
       onClose()
     },
     // No A/Q navigation on the bonus splash — only Esc (and the wager form).
