@@ -3,7 +3,7 @@
  * Purely presentational — session lifecycle (create/end/socket) stays in
  * PlayMode; ending is confirmed here and executed by the caller. */
 import { clsx } from 'clsx'
-import { UserX } from 'lucide-react'
+import { Globe, UserX } from 'lucide-react'
 import { useState } from 'react'
 
 import { Button } from '@/components/ui/Button'
@@ -21,6 +21,10 @@ export interface JoinPanelProps {
   lanIps: string[]
   /** Public tunnel origin while remote play is on (desktop only). */
   remoteUrl?: string | null
+  remoteBusy?: boolean
+  /** Present only in the desktop app — absent hides the invite button. */
+  onStartRemote?: () => void
+  onStopRemote?: () => void
   /** Latest host-socket snapshot — null until the welcome arrives. */
   snapshot: SessionSnapshot | null
   /** Sends a host command over the live socket (kick, here). */
@@ -43,6 +47,9 @@ export function JoinPanel({
   code,
   lanIps,
   remoteUrl = null,
+  remoteBusy = false,
+  onStartRemote,
+  onStopRemote,
   snapshot,
   command,
   onEnd,
@@ -138,10 +145,28 @@ export function JoinPanel({
           )}
         </div>
 
-        <div className="border-line-soft bg-surface/40 flex items-center justify-between border-t px-6 py-3.5">
+        <div className="border-line-soft bg-surface/40 flex items-center justify-between gap-2 border-t px-6 py-3.5">
           <Button variant="danger" onClick={() => setConfirmEnd(true)}>
             End session
           </Button>
+          {remoteUrl
+            ? onStopRemote && (
+                <Button variant="ghost" onClick={onStopRemote} className="text-xs">
+                  <Globe className="size-3.5" />
+                  Stop remote access
+                </Button>
+              )
+            : onStartRemote && (
+                <Button
+                  variant="soft"
+                  onClick={onStartRemote}
+                  disabled={remoteBusy}
+                  title="Open a secure tunnel so friends can join from anywhere"
+                >
+                  <Globe className="size-4" />
+                  {remoteBusy ? 'Opening tunnel…' : 'Invite over the internet'}
+                </Button>
+              )}
           <Button variant="ghost" onClick={onClose}>
             Close
           </Button>

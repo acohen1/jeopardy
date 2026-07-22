@@ -524,6 +524,9 @@ export function PlayMode({ boardId }: { boardId: string }) {
           code={session.code}
           lanIps={session.lanIps}
           remoteUrl={remoteUrl}
+          remoteBusy={remoteBusy}
+          onStartRemote={desktop ? () => void startRemote() : undefined}
+          onStopRemote={desktop ? stopRemote : undefined}
           snapshot={live.snapshot}
           command={live.command}
           onEnd={endLiveSession}
