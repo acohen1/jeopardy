@@ -40,6 +40,30 @@ def isolated_store(tmp_path):
     store.boards_dir = old_boards_dir
 
 
+@pytest.fixture(autouse=True)
+def isolated_session_manager():
+    """Reset the SessionManager singleton between tests (same mutate-don't-
+    reassign rule as the store above).
+
+    Each TestClient runs its own event loop, but an asyncio.Lock binds to
+    whichever loop first CONTENDS it — and the score-notify bridge makes
+    contention routine. A lock bound in one test then raises "bound to a
+    different event loop" in the next. A fresh Lock (and cleared session/loop
+    refs) per test keeps every binding test-local. Production is unaffected:
+    one process, one loop, forever.
+    """
+    import asyncio
+
+    from app.session import manager
+
+    manager._session = None
+    manager._loop = None
+    manager._lock = asyncio.Lock()
+    yield manager
+    manager._session = None
+    manager._loop = None
+
+
 @pytest.fixture()
 def client():
     with TestClient(app) as c:

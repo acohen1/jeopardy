@@ -31,6 +31,9 @@ export function useHotkeys(
     if (!enabled) return
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return
+      // Every hotkey here is press-once — a held key must not stream repeats
+      // (holding C would fire an award per OS key-repeat tick).
+      if (e.repeat) return
       if (e.ctrlKey || e.metaKey || e.altKey) return
       if (!allowInModals && anyModalOpen()) return
       if (!allowInInputs && isTypingTarget(e.target)) return

@@ -1,20 +1,28 @@
 /** BonusSplash — the "★ BONUS ★" reveal page shown when a bonus (Daily
- * Double) tile is opened fresh. The host sets a wager (defaults to the tile
- * value, with quick chips for 1× and 2×) and then reveals the question.
- * Purely presentational: parses/validates the wager and hands the number up. */
+ * Double) tile is opened fresh. The host picks WHO is wagering (pre-selected
+ * to the controlling player under turn rules), sets a wager hard-capped at
+ * max(wagerer's score, top row value) — the real Daily Double rule — and
+ * reveals the question. Parses/validates and hands (wager, wagerer) up. */
 import { useState } from 'react'
 import type { FormEvent, KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { clsx } from 'clsx'
 
 import { Button } from '@/components/ui/Button'
 import { TextInput } from '@/components/ui/TextInput'
 import { toast } from '@/components/ui/Toaster'
 import { money } from '@/lib/format'
+import type { Player } from '@/types/board'
 
 export interface BonusSplashProps {
   /** The tile's printed value — the wager default and the base for the chips. */
   tileValue: number
-  /** Called with the validated wager when the host reveals the question. */
-  onSubmit: (wager: number) => void
+  /** Highest row value on the board — the wager floor for low/negative scores. */
+  topRowValue: number
+  players: Player[]
+  /** Pre-selected wagerer (the controlling player), when turn rules know one. */
+  initialWagerer: string | null
+  /** Called with the validated wager + wagerer when the host reveals. */
+  onSubmit: (wager: number, wagerer: string | null) => void
   /** Esc pressed while typing in the wager field — close the overlay. */
   onCancel: () => void
 }
@@ -36,8 +44,21 @@ function parseWager(raw: string): number {
   return cleaned.length > 0 ? Number(cleaned) : NaN
 }
 
-export function BonusSplash({ tileValue, onSubmit, onCancel }: BonusSplashProps) {
+export function BonusSplash({
+  tileValue,
+  topRowValue,
+  players,
+  initialWagerer,
+  onSubmit,
+  onCancel,
+}: BonusSplashProps) {
   const [raw, setRaw] = useState(String(tileValue))
+  const [wagerer, setWagerer] = useState<string | null>(initialWagerer)
+
+  const selected = players.find((p) => p.name === wagerer) ?? null
+  /** Real Daily Double rule: even at $0 (or below) you can risk the board's
+   * top clue value; above that, your whole score. */
+  const cap = selected ? Math.max(selected.score, topRowValue) : null
 
   const setFromChip = (amount: number) => {
     setRaw(String(amount))
@@ -47,13 +68,22 @@ export function BonusSplash({ tileValue, onSubmit, onCancel }: BonusSplashProps)
 
   const submit = (e: FormEvent) => {
     e.preventDefault()
+    if (players.length > 0 && !selected) {
+      toast('Pick who is wagering first', { kind: 'error' })
+      return
+    }
     const wager = parseWager(raw)
     if (!Number.isFinite(wager) || wager <= 0) {
       toast('Enter a positive wager', { kind: 'error' })
       focusWagerInput()
       return
     }
-    onSubmit(wager)
+    if (cap !== null && wager > cap) {
+      toast(`${selected!.name} can wager at most ${money(cap)}`, { kind: 'error' })
+      focusWagerInput()
+      return
+    }
+    onSubmit(wager, selected?.name ?? null)
   }
 
   const onInputKeyDown = (e: ReactKeyboardEvent<HTMLInputElement>) => {
@@ -66,7 +96,7 @@ export function BonusSplash({ tileValue, onSubmit, onCancel }: BonusSplashProps)
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-10">
+    <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-8">
       {/* Lockup with a soft pulsing amber glow behind it */}
       <div className="animate-scale-in relative">
         <div
@@ -83,7 +113,39 @@ export function BonusSplash({ tileValue, onSubmit, onCancel }: BonusSplashProps)
         <p className="text-ink-faint text-sm">Tile value: {money(tileValue)}</p>
       </div>
 
-      <form onSubmit={submit} className="flex flex-col items-center gap-7">
+      {players.length > 0 && (
+        <div className="space-y-2.5 text-center">
+          <p className="text-ink-muted text-sm">Who&rsquo;s wagering?</p>
+          <div className="flex max-w-2xl flex-wrap justify-center gap-2">
+            {players.map((p) => (
+              <button
+                key={p.name}
+                type="button"
+                data-testid={`wagerer-${p.name}`}
+                onClick={() => setWagerer(p.name)}
+                className={clsx(
+                  'cursor-pointer rounded-lg border px-3 py-1.5 text-sm transition-colors duration-100',
+                  p.name === wagerer
+                    ? 'border-dollar bg-dollar/15 text-dollar'
+                    : 'border-line/60 text-ink-muted hover:border-line hover:text-ink',
+                )}
+              >
+                {p.name}
+                <span className={clsx('ml-2', p.score < 0 && 'text-danger')}>
+                  {money(p.score)}
+                </span>
+              </button>
+            ))}
+          </div>
+          {selected && cap !== null && (
+            <p className="text-ink-faint text-xs">
+              {selected.name} can wager up to <span className="text-dollar">{money(cap)}</span>
+            </p>
+          )}
+        </div>
+      )}
+
+      <form onSubmit={submit} className="flex flex-col items-center gap-6">
         <div className="flex flex-wrap items-center justify-center gap-3">
           <label htmlFor={WAGER_INPUT_ID} className="text-ink-muted text-sm">
             Wager
@@ -104,6 +166,11 @@ export function BonusSplash({ tileValue, onSubmit, onCancel }: BonusSplashProps)
           <Button type="button" variant="soft" size="sm" onClick={() => setFromChip(tileValue * 2)}>
             2× {money(tileValue * 2)}
           </Button>
+          {cap !== null && cap !== tileValue && cap !== tileValue * 2 && (
+            <Button type="button" variant="soft" size="sm" onClick={() => setFromChip(cap)}>
+              Max {money(cap)}
+            </Button>
+          )}
         </div>
         <Button type="submit" variant="primary" size="lg">
           Reveal the question →

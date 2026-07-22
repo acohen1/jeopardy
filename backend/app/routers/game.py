@@ -15,7 +15,8 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from ..models import Board, Player, ScoreEvent
+from ..models import Board, FirstPick, MultiAwardRule, Player, ScoreEvent, TurnMode
+from ..session import manager
 from ..storage import store
 from .boards import get_or_404
 
@@ -41,7 +42,16 @@ class UsedRequest(BaseModel):
 
 
 class SettingsRequest(BaseModel):
-    allow_negatives: bool
+    # All optional: None = leave as-is, so a partial PUT (e.g. the negatives
+    # toggle) can never silently reset the other rules to their defaults.
+    allow_negatives: bool | None = None
+    turn_mode: TurnMode | None = None
+    multi_award: MultiAwardRule | None = None
+    first_pick: FirstPick | None = None
+
+
+class ControlRequest(BaseModel):
+    player: str | None  # None = nobody has the board
 
 
 def _clean_player_name(raw: str) -> str:
@@ -75,7 +85,9 @@ def add_player(board_id: str, req: PlayerRequest) -> Board:
         board.players.append(Player(name=name))
 
     get_or_404(board_id)
-    return store.update_board(board_id, mutate)
+    board = store.update_board(board_id, mutate)
+    manager.notify_scores(board_id)
+    return board
 
 
 @router.delete("/players/{name}")
@@ -84,7 +96,9 @@ def remove_player(board_id: str, name: str) -> Board:
         board.players = [p for p in board.players if p.name != name]
 
     get_or_404(board_id)
-    return store.update_board(board_id, mutate)
+    board = store.update_board(board_id, mutate)
+    manager.notify_scores(board_id)
+    return board
 
 
 @router.patch("/players/{name}")
@@ -97,9 +111,15 @@ def rename_player(board_id: str, name: str, req: PlayerRequest) -> Board:
                 status_code=409, detail=f"Player '{new_name}' already exists"
             )
         _find_player(board, name).name = new_name
+        if board.control_player == name:
+            board.control_player = new_name
 
     get_or_404(board_id)
-    return store.update_board(board_id, mutate)
+    board = store.update_board(board_id, mutate)
+    # Session state keys on names — a plain score refresh would leave the
+    # participant/winner/order under the old name (winner unawardable).
+    manager.notify_rename(board_id, name, new_name)
+    return board
 
 
 def _log(board: Board, event: ScoreEvent) -> None:
@@ -122,7 +142,10 @@ def award(board_id: str, name: str, req: AwardRequest) -> Board:
         ))
 
     get_or_404(board_id)
-    return store.update_board(board_id, mutate)
+    board = store.update_board(board_id, mutate)
+    # Awards flash on phones ('result'); everything else is a plain refresh.
+    manager.notify_scores(board_id, player=name, delta=req.delta)
+    return board
 
 
 @router.put("/players/{name}/score")
@@ -138,7 +161,9 @@ def set_score(board_id: str, name: str, req: SetScoreRequest) -> Board:
         ))
 
     get_or_404(board_id)
-    return store.update_board(board_id, mutate)
+    board = store.update_board(board_id, mutate)
+    manager.notify_scores(board_id)
+    return board
 
 
 @router.post("/history/undo")
@@ -155,7 +180,9 @@ def undo_score(board_id: str) -> Board:
         # player renamed/removed since: the event is still popped
 
     get_or_404(board_id)
-    return store.update_board(board_id, mutate)
+    board = store.update_board(board_id, mutate)
+    manager.notify_scores(board_id)
+    return board
 
 
 @router.post("/scores/reset")
@@ -164,9 +191,12 @@ def reset_scores(board_id: str) -> Board:
         for p in board.players:
             p.score = 0
         board.history = []  # a fresh game starts a fresh log
+        board.control_player = None  # fresh game re-picks who starts
 
     get_or_404(board_id)
-    return store.update_board(board_id, mutate)
+    board = store.update_board(board_id, mutate)
+    manager.notify_scores(board_id)
+    return board
 
 
 @router.put("/cells/{row}/{col}/used")
@@ -194,8 +224,31 @@ def reset_used(board_id: str) -> Board:
 
 @router.put("/settings")
 def update_settings(board_id: str, req: SettingsRequest) -> Board:
+    changed = req.model_dump(exclude_none=True)
+
     def mutate(board: Board) -> None:
-        board.allow_negatives = req.allow_negatives
+        for key, value in changed.items():
+            setattr(board, key, value)
 
     get_or_404(board_id)
-    return store.update_board(board_id, mutate)
+    board = store.update_board(board_id, mutate)
+    # The host's latest rule choices become the defaults for future boards.
+    store.set_app_defaults(changed)
+    manager.notify_scores(board_id)
+    return board
+
+
+@router.put("/control")
+def set_control(board_id: str, req: ControlRequest) -> Board:
+    """Hand board control to a player (or nobody). The frontend drives the
+    turn-mode transitions (it owns the clue lifecycle); this endpoint keeps
+    the STATE server-authoritative: validated, persisted, broadcast live."""
+    def mutate(board: Board) -> None:
+        if req.player is not None:
+            _find_player(board, req.player)  # 404 on unknown names
+        board.control_player = req.player
+
+    get_or_404(board_id)
+    board = store.update_board(board_id, mutate)
+    manager.notify_scores(board_id)
+    return board

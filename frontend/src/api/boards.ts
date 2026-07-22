@@ -5,7 +5,7 @@ import { useRef } from 'react'
 
 import { api } from './client'
 import { toast } from '@/components/ui/Toaster'
-import type { Board, BoardSummary } from '@/types/board'
+import type { Board, BoardSummary, FirstPick, MultiAwardRule, TurnMode } from '@/types/board'
 
 export const boardsQuery = () =>
   queryOptions({
@@ -157,6 +157,25 @@ export function useGameActions(boardId: string) {
     onError,
   })
 
+  /** Turn-order rules; the server also remembers them for future boards. */
+  const setRules = useMutation({
+    mutationFn: ([rules]: [
+      rules: { turn_mode?: TurnMode; multi_award?: MultiAwardRule; first_pick?: FirstPick },
+    ]) => api.put<Board>(`${base}/settings`, rules),
+    onMutate,
+    onSuccess,
+    onError,
+  })
+
+  /** Hand board control to a player (null = nobody). */
+  const setControl = useMutation({
+    mutationFn: ([player]: [player: string | null]) =>
+      api.put<Board>(`${base}/control`, { player }),
+    onMutate,
+    onSuccess,
+    onError,
+  })
+
   return {
     addPlayer,
     removePlayer,
@@ -168,5 +187,7 @@ export function useGameActions(boardId: string) {
     setCellUsed,
     resetUsed,
     setAllowNegatives,
+    setRules,
+    setControl,
   }
 }

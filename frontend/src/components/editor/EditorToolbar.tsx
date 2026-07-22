@@ -4,6 +4,7 @@ import { Link } from '@tanstack/react-router'
 import {
   ArrowLeft,
   Check,
+  ListOrdered,
   LoaderCircle,
   Minus,
   Play,
@@ -27,6 +28,8 @@ export interface EditorToolbarProps {
   onRedo: () => void
   onRename: (name: string) => void
   onResize: (rows: number, cols: number) => void
+  /** Opens the Game-rules dialog — dial in turn order before playing. */
+  onRules: () => void
   onPlay: () => void
 }
 
@@ -41,6 +44,7 @@ export function EditorToolbar({
   onRedo,
   onRename,
   onResize,
+  onRules,
   onPlay,
 }: EditorToolbarProps) {
   return (
@@ -93,6 +97,10 @@ export function EditorToolbar({
 
       <div className="ml-auto flex items-center gap-3">
         <StatusChip status={status} />
+        <Button variant="ghost" onClick={onRules} title="Game rules — turn order">
+          <ListOrdered size={14} />
+          Rules
+        </Button>
         <Button variant="primary" onClick={onPlay} className="px-5">
           <Play size={14} fill="currentColor" />
           Play

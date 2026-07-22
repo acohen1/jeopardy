@@ -2,7 +2,7 @@
  * Host tools: click a score to edit it inline (Enter commits, Esc/blur
  * cancels), a collapsible history feed, and an Undo-last button. */
 import { clsx } from 'clsx'
-import { Undo2 } from 'lucide-react'
+import { Gamepad2, Undo2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 
@@ -16,6 +16,12 @@ import { HistoryPanel } from './HistoryPanel'
 export interface ScoreboardProps {
   players: Player[]
   history: ScoreEvent[]
+  /** Live-session phone presence by player name — absent when not hosting. */
+  presence?: ReadonlyMap<string, boolean>
+  /** Whose pick it is under the turn rules (highlighted); null = nobody. */
+  controlPlayer?: string | null
+  /** Hand the board to a player (hover affordance); absent hides it. */
+  onGiveControl?: (name: string | null) => void
   onResetScores: () => void
   /** Host correction — commit an absolute score for a player. */
   onSetScore: (name: string, score: number) => void
@@ -40,6 +46,9 @@ function parseScore(raw: string): number | null {
 export function Scoreboard({
   players,
   history,
+  presence,
+  controlPlayer = null,
+  onGiveControl,
   onResetScores,
   onSetScore,
   onUndo,
@@ -70,9 +79,43 @@ export function Scoreboard({
           players.map((p) => (
             <div
               key={p.name}
-              className="bg-surface-warm border-line-soft shrink-0 rounded-xl border px-3 py-2.5"
+              className={clsx(
+                'group/card shrink-0 rounded-xl border px-3 py-2.5',
+                p.name === controlPlayer
+                  ? 'border-dollar/60 bg-dollar/10' // whose pick it is
+                  : 'bg-surface-warm border-line-soft',
+              )}
             >
-              <p className="text-ink text-sm font-bold break-words">{p.name}</p>
+              <p className="text-ink flex items-center text-sm font-bold break-words">
+                {p.name === controlPlayer && (
+                  /* Same icon the hand-off button uses: whoever "holds the
+                   * gamepad" has the board. */
+                  <Gamepad2
+                    aria-label="Has the board — their pick"
+                    className="text-dollar mr-1.5 size-3.5 shrink-0"
+                  >
+                    <title>Has the board — their pick</title>
+                  </Gamepad2>
+                )}
+                <span className="min-w-0">{p.name}</span>
+                {presence?.get(p.name) && (
+                  <span
+                    title="Connected on phone"
+                    className="bg-accent ml-1.5 inline-block size-1.5 shrink-0 animate-pulse rounded-full"
+                  />
+                )}
+                {onGiveControl && p.name !== controlPlayer && (
+                  <button
+                    type="button"
+                    title={`Give ${p.name} the board`}
+                    aria-label={`Give ${p.name} the board`}
+                    onClick={() => onGiveControl(p.name)}
+                    className="text-ink-faint hover:text-dollar ml-auto cursor-pointer pl-1 opacity-0 transition-opacity duration-100 group-hover/card:opacity-100"
+                  >
+                    <Gamepad2 className="size-3.5" />
+                  </button>
+                )}
+              </p>
               {editing === p.name ? (
                 <ScoreEditor
                   initial={p.score}

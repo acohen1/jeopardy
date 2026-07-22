@@ -15,7 +15,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
-from .routers import assets, boards, game
+from .routers import assets, boards, game, live
 from .storage import BoardNotFound
 
 app = FastAPI(title="Chaewon Jeopardy", version="2.0.0")
@@ -38,6 +38,7 @@ app.add_middleware(
 app.include_router(boards.router)
 app.include_router(game.router)
 app.include_router(assets.router)
+app.include_router(live.router)
 
 
 @app.get("/api/health")

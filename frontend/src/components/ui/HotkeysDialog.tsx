@@ -52,6 +52,9 @@ export function HotkeysDialog({ open, onClose }: { open: boolean; onClose: () =>
             { keys: ['A'], label: 'Reveal the answer' },
             { keys: ['Q'], label: 'Back to the question' },
             { keys: ['T'], label: 'Start / restart the timer' },
+            { keys: ['B'], label: 'Arm / re-arm buzzers (hosted games)' },
+            { keys: ['C'], label: 'Correct — award the buzz winner (hosted games)' },
+            { keys: ['W'], label: 'Wrong — deduct & re-arm the rest (hosted games)' },
             { keys: ['Esc'], label: 'Close the clue' },
           ]}
         />

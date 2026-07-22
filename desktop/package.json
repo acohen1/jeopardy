@@ -1,7 +1,7 @@
 {
   "name": "chaewon-jeopardy",
   "productName": "Chaewon Jeopardy",
-  "version": "2.2.2",
+  "version": "2.3.0",
   "private": true,
   "description": "Chaewon Jeopardy desktop shell (Electron)",
   "main": "main.cjs",

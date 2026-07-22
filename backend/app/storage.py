@@ -135,9 +135,43 @@ class BoardStore:
         out.sort(key=lambda s: s.updated_at, reverse=True)
         return out
 
+    # ------------------------------------------------------------------ #
+    #  App defaults (sticky game-rule settings for future boards)        #
+    # ------------------------------------------------------------------ #
+    _DEFAULTABLE = ("allow_negatives", "turn_mode", "multi_award", "first_pick")
+
+    def _defaults_path(self) -> Path:
+        return self.data_dir / "defaults.json"
+
+    def get_app_defaults(self) -> dict:
+        with self._lock:
+            try:
+                with open(self._defaults_path(), encoding="utf-8") as f:
+                    data = json.load(f)
+                return {k: data[k] for k in self._DEFAULTABLE if k in data}
+            except (OSError, ValueError):
+                return {}
+
+    def set_app_defaults(self, values: dict) -> None:
+        """Remember the host's last-chosen game rules for future boards."""
+        with self._lock:
+            merged = {**self.get_app_defaults(), **{
+                k: v for k, v in values.items() if k in self._DEFAULTABLE
+            }}
+            tmp = self._defaults_path().with_suffix(".tmp")
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(merged, f, indent=2)
+            os.replace(tmp, self._defaults_path())
+
     def create_board(self, name: str) -> Board:
         with self._lock:
             board = new_board(self._new_id(), name.strip() or "Untitled Board", _now())
+            # New games start from the host's last-chosen rules.
+            for key, value in self.get_app_defaults().items():
+                try:
+                    setattr(board, key, value)
+                except ValueError:
+                    pass  # a stale/corrupt default never blocks creation
             self._write(board)
         return board
 
@@ -186,6 +220,7 @@ class BoardStore:
             copy.name = f"{src.name} (copy)"
             copy.created_at = now
             copy.updated_at = now
+            copy.control_player = None  # a fresh game re-picks who starts
             self._write(copy)
             # copy only the assets the board actually references
             src_assets = self.assets_dir(board_id)

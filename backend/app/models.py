@@ -81,6 +81,13 @@ class ScoreEvent(BaseModel):
 MAX_HISTORY = 200
 
 
+# Turn order ("board control") rules — all host-selectable per board, with
+# the last-used values persisted as app defaults for future boards.
+TurnMode = Literal["manual", "first-correct", "sequential"]
+MultiAwardRule = Literal["first", "last", "host"]  # first-correct mode only
+FirstPick = Literal["random", "host", "lowest"]  # who starts (non-manual)
+
+
 class Board(BaseModel):
     id: str
     name: str
@@ -90,6 +97,12 @@ class Board(BaseModel):
     row_values: list[int] = Field(default_factory=lambda: list(DEFAULT_VALUES))
     cells: list[list[Cell]] = Field(default_factory=list)
     allow_negatives: bool = True
+    turn_mode: TurnMode = "first-correct"  # real-Jeopardy flow out of the box
+    multi_award: MultiAwardRule = "first"
+    first_pick: FirstPick = "random"
+    # Whose pick it is right now (game state, like scores — None until
+    # assigned; always a current player name, normalize_board enforces).
+    control_player: str | None = None
     players: list[Player] = Field(default_factory=list)
     history: list[ScoreEvent] = Field(default_factory=list)
     created_at: str = ""
@@ -304,6 +317,13 @@ def normalize_board(board: Board) -> Board:
             p.name = name
             players.append(p)
     board.players = players
+
+    # Control must always name a current player (renames/removals/imports
+    # can orphan it) — a dangling name would break turn highlights silently.
+    if board.control_player is not None and not any(
+        p.name == board.control_player for p in board.players
+    ):
+        board.control_player = None
 
     if len(board.history) > MAX_HISTORY:
         board.history = board.history[-MAX_HISTORY:]

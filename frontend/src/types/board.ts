@@ -43,6 +43,12 @@ export interface ScoreEvent {
   note: string
 }
 
+/** Turn order rules — mirror models.py; last-chosen values become the app
+ * defaults for future boards (server-side). */
+export type TurnMode = 'manual' | 'first-correct' | 'sequential'
+export type MultiAwardRule = 'first' | 'last' | 'host'
+export type FirstPick = 'random' | 'host' | 'lowest'
+
 export interface Board {
   id: string
   name: string
@@ -52,6 +58,11 @@ export interface Board {
   row_values: number[]
   cells: Cell[][]
   allow_negatives: boolean
+  turn_mode: TurnMode
+  multi_award: MultiAwardRule
+  first_pick: FirstPick
+  /** Whose pick it is (game state, like scores); null until assigned. */
+  control_player: string | null
   players: Player[]
   history: ScoreEvent[]
   created_at: string

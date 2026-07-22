@@ -10,12 +10,18 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as JoinRouteImport } from './routes/join'
 import { Route as BoardsBoardIdEditRouteImport } from './routes/boards.$boardId.edit'
 import { Route as BoardsBoardIdPlayRouteImport } from './routes/boards.$boardId.play'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const JoinRoute = JoinRouteImport.update({
+  id: '/join',
+  path: '/join',
   getParentRoute: () => rootRouteImport,
 } as any)
 const BoardsBoardIdEditRoute = BoardsBoardIdEditRouteImport.update({
@@ -31,30 +37,39 @@ const BoardsBoardIdPlayRoute = BoardsBoardIdPlayRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/join': typeof JoinRoute
   '/boards/$boardId/edit': typeof BoardsBoardIdEditRoute
   '/boards/$boardId/play': typeof BoardsBoardIdPlayRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/join': typeof JoinRoute
   '/boards/$boardId/edit': typeof BoardsBoardIdEditRoute
   '/boards/$boardId/play': typeof BoardsBoardIdPlayRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/join': typeof JoinRoute
   '/boards/$boardId/edit': typeof BoardsBoardIdEditRoute
   '/boards/$boardId/play': typeof BoardsBoardIdPlayRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/boards/$boardId/edit' | '/boards/$boardId/play'
+  fullPaths: '/' | '/join' | '/boards/$boardId/edit' | '/boards/$boardId/play'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/boards/$boardId/edit' | '/boards/$boardId/play'
-  id: '__root__' | '/' | '/boards/$boardId/edit' | '/boards/$boardId/play'
+  to: '/' | '/join' | '/boards/$boardId/edit' | '/boards/$boardId/play'
+  id:
+    | '__root__'
+    | '/'
+    | '/join'
+    | '/boards/$boardId/edit'
+    | '/boards/$boardId/play'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  JoinRoute: typeof JoinRoute
   BoardsBoardIdEditRoute: typeof BoardsBoardIdEditRoute
   BoardsBoardIdPlayRoute: typeof BoardsBoardIdPlayRoute
 }
@@ -66,6 +81,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/join': {
+      id: '/join'
+      path: '/join'
+      fullPath: '/join'
+      preLoaderRoute: typeof JoinRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/boards/$boardId/edit': {
@@ -87,6 +109,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  JoinRoute: JoinRoute,
   BoardsBoardIdEditRoute: BoardsBoardIdEditRoute,
   BoardsBoardIdPlayRoute: BoardsBoardIdPlayRoute,
 }

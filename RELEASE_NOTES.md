@@ -9,6 +9,20 @@
 <!-- Release prep = bump desktop/package.json + add a new section here, one commit. -->
 <!-- Plain lines and "- " bullets render best in-app. -->
 
+## v2.3.0
+
+The Party Update — your phones are the buzzers now:
+
+- Host a game and friends join in seconds: scan the QR or type the room code from any phone or laptop on your wifi — nothing to install
+- Every game opens in a lobby: giant code and QR for the TV, the roster filling up live, then Start game rolls a roulette for who goes first
+- Real buzzers — first buzz wins, a wrong answer locks you out while the others steal, and the host settles it in one click (✓ Correct / ✗ Wrong, or the C and W keys)
+- Your phone knows the score: your money front and center, live standings, and a big +$400! flash when points land
+- Joining is personal — pick who you are from the roster; if your phone dies mid-game, pick yourself again and your score is right where you left it
+- The host can disconnect any device from the roster (scores always stay safe)
+- Turn order, your way — new Rules menu in the editor and in play: first correct answer picks next (real Jeopardy), take turns in order, or the host hands the board around; whoever has the board wears the gamepad on the scoreboard and sees "Your pick!" on their phone
+- Daily Doubles finally know who's wagering: pick the wagerer, and the wager is capped by the real rule — your score or the top row, whichever is higher
+- Your rule choices are remembered as the defaults for every new board
+
 ## v2.2.2
 
 Updates, but make them smooth:

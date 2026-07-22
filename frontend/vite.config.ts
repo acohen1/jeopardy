@@ -16,8 +16,12 @@ export default defineConfig({
     },
   },
   server: {
+    host: true, // LAN-exposed so real phones can hit /join against `npm run dev`
     proxy: {
-      '/api': 'http://localhost:8000',
+      '/api': {
+        target: 'http://localhost:8000',
+        ws: true, // live-session WebSocket (/api/ws)
+      },
     },
   },
 })

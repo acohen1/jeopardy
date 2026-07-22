@@ -8,6 +8,8 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 from ..models import Board, BoardSummary
+# no cycle: session.py imports only storage/models, never routers
+from ..session import manager
 from ..storage import BoardNotFound, store
 
 router = APIRouter(prefix="/api/boards", tags=["boards"])
@@ -81,13 +83,34 @@ def save_board(board_id: str, board: Board) -> Board:
     for p in board.players:
         if p.name in server_scores:
             p.score = server_scores[p.name]
+    # Roster membership is payload-owned EXCEPT for live participants: phone
+    # joins auto-create their player mid-session, so a stale draft from
+    # before the join must not delete them (their score rides the server
+    # copy). Editor deletions of non-participant players still stick.
+    live_names = manager.participant_names(board_id)
+    if live_names:
+        payload_names = {p.name for p in board.players}
+        board.players.extend(
+            p
+            for p in current.players
+            if p.name in live_names and p.name not in payload_names
+        )
     for r, row in enumerate(board.cells):
         for c, cell in enumerate(row):
             if r < len(current.cells) and c < len(current.cells[r]):
                 cell.used = current.cells[r][c].used
     board.history = current.history  # score log is game state, never editor's
+    # Turn rules + control are set in PLAY mode — a stale editor draft must
+    # not revert them mid-game (same reasoning as scores/used above).
+    board.turn_mode = current.turn_mode
+    board.multi_award = current.multi_award
+    board.first_pick = current.first_pick
+    board.control_player = current.control_player
+    board.allow_negatives = current.allow_negatives
 
-    return store.save_board(board)
+    saved = store.save_board(board)
+    manager.notify_scores(board_id)  # live clients see the merged roster
+    return saved
 
 
 @router.patch("/{board_id}")

@@ -2,12 +2,13 @@ import { useSuspenseQuery } from '@tanstack/react-query'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
 
-import { boardQuery } from '@/api/boards'
+import { boardQuery, useGameActions } from '@/api/boards'
 import { BoardGrid } from '@/components/editor/BoardGrid'
 import { CellEditorDialog } from '@/components/editor/CellEditorDialog'
 import { EditorToolbar } from '@/components/editor/EditorToolbar'
 import { PlayerPanel } from '@/components/editor/PlayerPanel'
 import { useBoardDraft } from '@/components/editor/useBoardDraft'
+import { RulesDialog } from '@/components/play/RulesDialog'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { toast } from '@/components/ui/Toaster'
 import { usePageTitle } from '@/hooks/usePageTitle'
@@ -36,6 +37,11 @@ function Editor({ initial }: { initial: Board }) {
   const [editing, setEditing] = useState<{ row: number; col: number } | null>(null)
   // Non-null while the "some cells have no answer" pre-play warning is up.
   const [playWarning, setPlayWarning] = useState<string | null>(null)
+  // Game rules are PLAY-mode state (the draft's autosave can't touch them by
+  // design) — read the live query cache and mutate via the settings endpoint.
+  const { data: liveBoard } = useSuspenseQuery(boardQuery(board.id))
+  const gameActions = useGameActions(board.id)
+  const [rulesOpen, setRulesOpen] = useState(false)
   usePageTitle(`${board.name} · Edit — Chaewon Jeopardy`)
 
   // Ctrl/Cmd+S — flush the debounced autosave right now. useHotkeys skips all
@@ -134,10 +140,8 @@ function Editor({ initial }: { initial: Board }) {
   }
 
   const onPlay = () => {
-    if (board.players.length === 0) {
-      toast('Add at least one player before starting', { kind: 'error' })
-      return
-    }
+    // No player gate: play mode opens as a LOBBY — friends join from their
+    // phones there, and the board itself is gated behind Start game.
     // Readiness check: cells with a question but no answer would be discovered
     // live at game night — warn (but don't block) before starting.
     const incomplete: string[] = []
@@ -184,6 +188,7 @@ function Editor({ initial }: { initial: Board }) {
         onRedo={redo}
         onRename={(name) => update((b) => ({ ...b, name }))}
         onResize={onResize}
+        onRules={() => setRulesOpen(true)}
         onPlay={onPlay}
       />
 
@@ -203,6 +208,13 @@ function Editor({ initial }: { initial: Board }) {
           }
         />
       </div>
+
+      <RulesDialog
+        open={rulesOpen}
+        board={liveBoard}
+        onChange={(rules) => gameActions.setRules.mutate([rules])}
+        onClose={() => setRulesOpen(false)}
+      />
 
       <ConfirmDialog
         open={playWarning !== null}
