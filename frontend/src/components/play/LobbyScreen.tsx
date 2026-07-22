@@ -8,7 +8,7 @@
  * Purely presentational — session lifecycle and control mutations stay in
  * PlayMode (onHostGame / onEndSession / onStart). */
 import { clsx } from 'clsx'
-import { ListOrdered, Pencil, Play, Presentation, UserX, Wifi } from 'lucide-react'
+import { Globe, ListOrdered, Pencil, Play, Presentation, UserX, Wifi } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 
@@ -26,6 +26,11 @@ export interface LobbyScreenProps {
   creating: boolean
   onHostGame: () => void
   onEndSession: () => void
+  /* ---- Remote play (desktop only; absent hides the affordance) ---- */
+  remoteUrl: string | null
+  remoteBusy: boolean
+  onStartRemote?: () => void
+  onStopRemote: () => void
   command: (command: HostCommand, target?: string) => void
   onOpenRules: () => void
   /** Leave the lobby; `firstPick` is the roulette/lowest winner (or null). */
@@ -46,6 +51,10 @@ export function LobbyScreen({
   creating,
   onHostGame,
   onEndSession,
+  remoteUrl,
+  remoteBusy,
+  onStartRemote,
+  onStopRemote,
   command,
   onOpenRules,
   onStart,
@@ -62,8 +71,11 @@ export function LobbyScreen({
   )
   const participants = new Set((snapshot?.participants ?? []).map((p) => p.name))
 
-  const primaryUrl = session ? joinUrl(session.lanIps[0]) : null
+  const lanUrl = session ? joinUrl(session.lanIps[0]) : null
   const extraUrls = session ? session.lanIps.slice(1).map((ip) => joinUrl(ip)) : []
+  // Remote tunnel active → the QR serves EVERYONE (wifi friends included);
+  // the wifi addresses stay listed as alternates.
+  const primaryUrl = session ? (remoteUrl ? `${remoteUrl}/join` : lanUrl) : null
 
   const startGame = () => {
     if (board.players.length === 0 || rolling) return
@@ -153,16 +165,47 @@ export function LobbyScreen({
               </div>
               <JoinQr url={primaryUrl} className="w-52" />
               <div>
+                {remoteUrl && (
+                  <p className="text-accent mb-1 inline-flex items-center gap-1.5 text-xs font-semibold">
+                    <Globe className="size-3.5" />
+                    Anyone can join — near or far
+                  </p>
+                )}
                 <p className="text-ink font-mono text-sm break-all">{primaryUrl}</p>
+                {remoteUrl && lanUrl && (
+                  <p className="text-ink-faint mt-0.5 font-mono text-xs break-all">
+                    on this wifi: {lanUrl}
+                  </p>
+                )}
                 {extraUrls.map((u) => (
                   <p key={u} className="text-ink-faint mt-0.5 font-mono text-xs break-all">
                     or {u}
                   </p>
                 ))}
               </div>
-              <Button variant="ghost" onClick={onEndSession} className="text-xs">
-                End session
-              </Button>
+              <div className="flex items-center gap-2">
+                {remoteUrl ? (
+                  <Button variant="ghost" onClick={onStopRemote} className="text-xs">
+                    <Globe className="size-3.5" />
+                    Stop remote access
+                  </Button>
+                ) : (
+                  onStartRemote && (
+                    <Button
+                      variant="soft"
+                      onClick={onStartRemote}
+                      disabled={remoteBusy}
+                      title="Open a secure tunnel so friends can join from anywhere"
+                    >
+                      <Globe className="size-4" />
+                      {remoteBusy ? 'Opening tunnel…' : 'Invite over the internet'}
+                    </Button>
+                  )
+                )}
+                <Button variant="ghost" onClick={onEndSession} className="text-xs">
+                  End session
+                </Button>
+              </div>
             </>
           ) : (
             <>

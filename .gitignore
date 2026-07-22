@@ -27,3 +27,6 @@ desktop/dist/
 # Backend PyInstaller sidecar artifacts
 backend/build/
 backend/dist/
+
+# cloudflared binary (fetched pre-build, never committed)
+desktop/vendor/

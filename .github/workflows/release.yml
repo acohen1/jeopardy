@@ -106,6 +106,11 @@ jobs:
           gh release create "v$v" --title "Chaewon Jeopardy v$v" --notes-file release-body.md
           exit 0
 
+      - name: Fetch cloudflared (remote-play tunnel client)
+        if: steps.guard.outputs.skip == 'false'
+        shell: pwsh
+        run: node desktop/scripts/fetch-cloudflared.cjs
+
       - name: Build installer and upload to the release
         if: steps.guard.outputs.skip == 'false'
         shell: pwsh

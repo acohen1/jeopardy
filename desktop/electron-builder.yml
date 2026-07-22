@@ -22,6 +22,10 @@ extraResources:
     to: jeopardy-backend.exe
   - from: ../frontend/dist
     to: frontend-dist
+  # Remote play: cloudflared quick-tunnel client (scripts/fetch-cloudflared.cjs
+  # downloads it pre-build; a missing file fails the build — never ship without)
+  - from: vendor/cloudflared.exe
+    to: cloudflared.exe
 
 win:
   target: nsis

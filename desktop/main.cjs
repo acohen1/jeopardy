@@ -340,6 +340,7 @@ async function startSidecar() {
 async function restartSidecar() {
   respawning = true;
   try {
+    stopTunnel(); // the port may change; the UI restarts remote play on demand
     killSidecar();
     const base = await startSidecar();
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -766,6 +767,124 @@ ipcMain.handle('jeopardy:lan-set', async (_event, enabled) => {
 });
 
 // ---------------------------------------------------------------------------
+// Remote play — cloudflared quick tunnel (friends join over the internet)
+//
+// The tunnel dials OUT to Cloudflare's edge and forwards a public
+// https://…trycloudflare.com URL to the local backend — join page, API, and
+// the live WebSocket all ride the same origin, so the whole session protocol
+// works unchanged. No accounts, no hosting, no inbound firewall holes.
+// ---------------------------------------------------------------------------
+
+let tunnelProc = null;
+let tunnelUrl = null;
+/** @type {Promise<string> | null} */
+let tunnelStarting = null;
+
+function broadcastRemoteState() {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) {
+      win.webContents.send('jeopardy:remote-state', { url: tunnelUrl });
+    }
+  }
+}
+
+function spawnTunnel() {
+  return new Promise((resolve, reject) => {
+    const exe = path.join(process.resourcesPath, 'cloudflared.exe');
+    if (!fs.existsSync(exe)) {
+      reject(new Error('The remote-play component is missing — reinstalling the app fixes this.'));
+      return;
+    }
+    if (!apiBase) {
+      reject(new Error('The backend is not running yet.'));
+      return;
+    }
+    shellLog(`starting quick tunnel -> ${apiBase}`);
+    const proc = spawn(exe, ['tunnel', '--url', apiBase, '--no-autoupdate'], {
+      windowsHide: true,
+      stdio: ['ignore', 'ignore', 'pipe'],
+    });
+    tunnelProc = proc;
+    let settled = false;
+    const timeout = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        stopTunnel();
+        reject(new Error('The tunnel did not come up within 40 seconds — check your internet connection and try again.'));
+      }
+    }, 40000);
+    // cloudflared prints the assigned URL to stderr.
+    proc.stderr.on('data', (chunk) => {
+      const m = String(chunk).match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/);
+      if (m && !settled) {
+        settled = true;
+        clearTimeout(timeout);
+        tunnelUrl = m[0];
+        shellLog(`tunnel up: ${tunnelUrl}`);
+        broadcastRemoteState();
+        resolve(tunnelUrl);
+      }
+    });
+    proc.on('exit', (code) => {
+      shellLog(`tunnel exited code=${code}`);
+      tunnelProc = null;
+      tunnelUrl = null;
+      broadcastRemoteState();
+      if (!settled) {
+        settled = true;
+        clearTimeout(timeout);
+        reject(new Error(`The tunnel process exited unexpectedly (code ${code}).`));
+      }
+    });
+    proc.on('error', (err) => {
+      if (!settled) {
+        settled = true;
+        clearTimeout(timeout);
+        tunnelProc = null;
+        reject(err);
+      }
+    });
+  });
+}
+
+async function startTunnel() {
+  if (tunnelUrl) return tunnelUrl;
+  if (!tunnelStarting) {
+    tunnelStarting = spawnTunnel().finally(() => {
+      tunnelStarting = null;
+    });
+  }
+  return tunnelStarting;
+}
+
+function stopTunnel() {
+  const proc = tunnelProc;
+  tunnelProc = null;
+  tunnelUrl = null;
+  if (proc && !proc.killed && typeof proc.pid === 'number') {
+    try {
+      if (process.platform === 'win32') {
+        spawnSync('taskkill', ['/pid', String(proc.pid), '/T', '/F'], {
+          windowsHide: true,
+          timeout: 10000,
+        });
+      } else {
+        proc.kill('SIGTERM');
+      }
+    } catch (err) {
+      shellLog(`failed to kill tunnel: ${err}`);
+    }
+  }
+  broadcastRemoteState();
+}
+
+ipcMain.handle('jeopardy:remote-start', async () => ({ url: await startTunnel() }));
+ipcMain.handle('jeopardy:remote-stop', () => {
+  stopTunnel();
+});
+ipcMain.handle('jeopardy:remote-get', () => ({ url: tunnelUrl }));
+
+// ---------------------------------------------------------------------------
 // Window
 // ---------------------------------------------------------------------------
 
@@ -876,6 +995,7 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   quitting = true;
+  stopTunnel();
   killSidecar();
   // autoInstallOnAppQuit can run the installer right after this quit — make
   // sure no stray backend holds file locks when it does.

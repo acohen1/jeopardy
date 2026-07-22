@@ -11,8 +11,9 @@
     "desktop:dev": "cd desktop && npm run dev",
     "desktop:build:backend": "cd backend && uv run pyinstaller jeopardy-backend.spec --noconfirm",
     "desktop:build:frontend": "cd frontend && npm run build",
-    "desktop:package": "npm run desktop:build:frontend && npm run desktop:build:backend && cd desktop && npx electron-builder --win --publish never",
-    "desktop:package:dir": "npm run desktop:build:frontend && npm run desktop:build:backend && cd desktop && npx electron-builder --dir"
+    "desktop:fetch-tunnel": "node desktop/scripts/fetch-cloudflared.cjs",
+    "desktop:package": "npm run desktop:build:frontend && npm run desktop:build:backend && npm run desktop:fetch-tunnel && cd desktop && npx electron-builder --win --publish never",
+    "desktop:package:dir": "npm run desktop:build:frontend && npm run desktop:build:backend && npm run desktop:fetch-tunnel && cd desktop && npx electron-builder --dir"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

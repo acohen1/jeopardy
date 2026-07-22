@@ -60,6 +60,14 @@ export interface DesktopBridge {
     /** Toggle LAN access (rebinds the server; Windows may show a firewall prompt). */
     set(enabled: boolean): Promise<void>
   }
+  remote: {
+    /** Open a public quick tunnel to this game; resolves the https URL. */
+    start(): Promise<{ url: string }>
+    stop(): Promise<void>
+    get(): Promise<{ url: string | null }>
+    /** Fires when the tunnel comes up or dies (url null). */
+    onState(cb: (state: { url: string | null }) => void): () => void
+  }
 }
 
 export const desktop: DesktopBridge | undefined = (

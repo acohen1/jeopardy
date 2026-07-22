@@ -158,6 +158,33 @@ export function PlayMode({ boardId }: { boardId: string }) {
 
   const connectedCount = live.snapshot?.participants.filter((p) => p.connected).length ?? 0
 
+  // ---- Remote play (desktop tunnel; friends join over the internet) ----
+  const [remoteUrl, setRemoteUrl] = useState<string | null>(null)
+  const [remoteBusy, setRemoteBusy] = useState(false)
+  useEffect(() => {
+    if (!desktop) return
+    void desktop.remote.get().then((s) => setRemoteUrl(s.url)).catch(() => undefined)
+    // The shell reports tunnel death (process exit, sidecar restart) — the
+    // QR must fall back to wifi URLs rather than advertise a dead link.
+    return desktop.remote.onState((s) => setRemoteUrl(s.url))
+  }, [])
+  const startRemote = async () => {
+    if (!desktop || remoteBusy) return
+    setRemoteBusy(true)
+    try {
+      const { url } = await desktop.remote.start()
+      setRemoteUrl(url)
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Could not open the tunnel', { kind: 'error' })
+    } finally {
+      setRemoteBusy(false)
+    }
+  }
+  const stopRemote = () => {
+    void desktop?.remote.stop()
+    setRemoteUrl(null)
+  }
+
   // A phone join can CREATE a board player server-side — the board query has
   // no way to know, so scoreboard/podium/award rows would go stale. Detect
   // live-scoreboard names missing from the cached board and resync. Keyed on
@@ -335,6 +362,10 @@ export function PlayMode({ boardId }: { boardId: string }) {
           creating={creating}
           onHostGame={() => void hostGame(false)}
           onEndSession={endLiveSession}
+          remoteUrl={remoteUrl}
+          remoteBusy={remoteBusy}
+          onStartRemote={desktop ? () => void startRemote() : undefined}
+          onStopRemote={stopRemote}
           command={live.command}
           onOpenRules={() => setRulesOpen(true)}
           onStart={(firstPick) => {
@@ -492,6 +523,7 @@ export function PlayMode({ boardId }: { boardId: string }) {
           open={joinOpen}
           code={session.code}
           lanIps={session.lanIps}
+          remoteUrl={remoteUrl}
           snapshot={live.snapshot}
           command={live.command}
           onEnd={endLiveSession}

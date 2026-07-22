@@ -19,6 +19,8 @@ export interface JoinPanelProps {
   code: string
   /** LAN addresses the backend is reachable on (may be empty in browser dev). */
   lanIps: string[]
+  /** Public tunnel origin while remote play is on (desktop only). */
+  remoteUrl?: string | null
   /** Latest host-socket snapshot — null until the welcome arrives. */
   snapshot: SessionSnapshot | null
   /** Sends a host command over the live socket (kick, here). */
@@ -36,12 +38,26 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   )
 }
 
-export function JoinPanel({ open, code, lanIps, snapshot, command, onEnd, onClose }: JoinPanelProps) {
+export function JoinPanel({
+  open,
+  code,
+  lanIps,
+  remoteUrl = null,
+  snapshot,
+  command,
+  onEnd,
+  onClose,
+}: JoinPanelProps) {
   const [confirmEnd, setConfirmEnd] = useState(false)
 
+  // Remote tunnel active → its URL serves everyone; wifi listed as alternate.
   // In browser dev the backend may report no LAN IPs — the page origin works.
-  const primaryUrl = joinUrl(lanIps[0])
-  const extraUrls = lanIps.slice(1).map((ip) => joinUrl(ip))
+  const lanPrimary = joinUrl(lanIps[0])
+  const primaryUrl = remoteUrl ? `${remoteUrl}/join` : lanPrimary
+  const extraUrls = [
+    ...(remoteUrl ? [`on this wifi: ${lanPrimary}`] : []),
+    ...lanIps.slice(1).map((ip) => `or ${joinUrl(ip)}`),
+  ]
 
   const participants = snapshot?.participants ?? []
   // Board score by name — every participant is a board player by contract.
@@ -59,11 +75,11 @@ export function JoinPanel({ open, code, lanIps, snapshot, command, onEnd, onClos
               </p>
             </div>
             <div>
-              <SectionLabel>On your phone, open</SectionLabel>
+              <SectionLabel>{remoteUrl ? 'Join from anywhere' : 'On your phone, open'}</SectionLabel>
               <p className="text-ink font-mono text-sm break-all">{primaryUrl}</p>
               {extraUrls.map((u) => (
                 <p key={u} className="text-ink-faint mt-0.5 font-mono text-xs break-all">
-                  or {u}
+                  {u}
                 </p>
               ))}
             </div>

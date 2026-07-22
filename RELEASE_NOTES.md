@@ -14,6 +14,7 @@
 The Party Update — your phones are the buzzers now:
 
 - Host a game and friends join in seconds: scan the QR or type the room code from any phone or laptop on your wifi — nothing to install
+- Or invite the whole internet: "Invite over the internet" opens a secure tunnel and the QR becomes a link that works from anywhere — no accounts, no setup
 - Every game opens in a lobby: giant code and QR for the TV, the roster filling up live, then Start game rolls a roulette for who goes first
 - Real buzzers — first buzz wins, a wrong answer locks you out while the others steal, and the host settles it in one click (✓ Correct / ✗ Wrong, or the C and W keys)
 - Your phone knows the score: your money front and center, live standings, and a big +$400! flash when points land
@@ -22,6 +23,8 @@ The Party Update — your phones are the buzzers now:
 - Turn order, your way — new Rules menu in the editor and in play: first correct answer picks next (real Jeopardy), take turns in order, or the host hands the board around; whoever has the board wears the gamepad on the scoreboard and sees "Your pick!" on their phone
 - Daily Doubles finally know who's wagering: pick the wagerer, and the wager is capped by the real rule — your score or the top row, whichever is higher
 - Your rule choices are remembered as the defaults for every new board
+- New game (in the top bar) resets scores and the board and heads back to the lobby for a fresh start — connected players ride along
+- Present mode: Esc now does one thing at a time (leaving fullscreen no longer also closes the clue)
 
 ## v2.2.2
 

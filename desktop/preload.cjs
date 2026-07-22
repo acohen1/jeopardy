@@ -60,4 +60,11 @@ contextBridge.exposeInMainWorld('jeopardy', {
     get: () => ipcRenderer.invoke('jeopardy:lan-info'),
     set: (enabled) => ipcRenderer.invoke('jeopardy:lan-set', enabled),
   },
+
+  remote: {
+    start: () => ipcRenderer.invoke('jeopardy:remote-start'),
+    stop: () => ipcRenderer.invoke('jeopardy:remote-stop'),
+    get: () => ipcRenderer.invoke('jeopardy:remote-get'),
+    onState: (cb) => subscribe('jeopardy:remote-state', cb),
+  },
 });
