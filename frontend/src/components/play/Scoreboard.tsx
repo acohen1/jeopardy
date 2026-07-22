@@ -22,6 +22,9 @@ export interface ScoreboardProps {
   controlPlayer?: string | null
   /** Hand the board to a player (hover affordance); absent hides it. */
   onGiveControl?: (name: string | null) => void
+  /** Manual turn mode: handing the board IS the mechanism — keep the
+   * gamepad button visible instead of hover-only. */
+  handOffAlwaysVisible?: boolean
   onResetScores: () => void
   /** Host correction — commit an absolute score for a player. */
   onSetScore: (name: string, score: number) => void
@@ -49,6 +52,7 @@ export function Scoreboard({
   presence,
   controlPlayer = null,
   onGiveControl,
+  handOffAlwaysVisible = false,
   onResetScores,
   onSetScore,
   onUndo,
@@ -110,7 +114,10 @@ export function Scoreboard({
                     title={`Give ${p.name} the board`}
                     aria-label={`Give ${p.name} the board`}
                     onClick={() => onGiveControl(p.name)}
-                    className="text-ink-faint hover:text-dollar ml-auto cursor-pointer pl-1 opacity-0 transition-opacity duration-100 group-hover/card:opacity-100"
+                    className={clsx(
+                      'text-ink-faint hover:text-dollar ml-auto cursor-pointer pl-1 transition-opacity duration-100',
+                      !handOffAlwaysVisible && 'opacity-0 group-hover/card:opacity-100',
+                    )}
                   >
                     <Gamepad2 className="size-3.5" />
                   </button>

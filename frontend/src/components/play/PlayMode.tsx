@@ -68,7 +68,7 @@ export function PlayMode({ boardId }: { boardId: string }) {
   )
   const [overlay, setOverlay] = useState<OverlayState | null>(null)
   const [menu, setMenu] = useState<ContextMenuState | null>(null)
-  const [confirmBoardReset, setConfirmBoardReset] = useState(false)
+  const [confirmNewGame, setConfirmNewGame] = useState(false)
   const [confirmScoreReset, setConfirmScoreReset] = useState(false)
   const [rulesOpen, setRulesOpen] = useState(false)
   const [presenting, setPresenting] = useState(false)
@@ -359,9 +359,12 @@ export function PlayMode({ boardId }: { boardId: string }) {
                 <ArrowLeft className="size-4" />
                 Edit board
               </Link>
-              <Button variant="danger" onClick={() => setConfirmBoardReset(true)}>
+              {/* THE reset: same semantics as the podium's Play again —
+                  everything fresh, back to the lobby, roulette re-rolls.
+                  (Cells-only resets live on the right-click menu.) */}
+              <Button variant="danger" onClick={() => setConfirmNewGame(true)}>
                 <RotateCcw className="size-4" />
-                Reset board
+                New game
               </Button>
               <NegativesToggle
                 checked={board.allow_negatives}
@@ -446,6 +449,7 @@ export function PlayMode({ boardId }: { boardId: string }) {
           history={board.history}
           presence={presence}
           controlPlayer={board.control_player}
+          handOffAlwaysVisible={board.turn_mode === 'manual'}
           onGiveControl={(name) => giveControl(name, true)}
           onResetScores={() => setConfirmScoreReset(true)}
           onSetScore={(name, score) => actions.setScore.mutate([name, score, 'manual edit'])}
@@ -520,16 +524,18 @@ export function PlayMode({ boardId }: { boardId: string }) {
       />
 
       <ConfirmDialog
-        open={confirmBoardReset}
-        title="Reset board"
-        message="Mark all cells as unused?"
-        confirmLabel="Reset"
+        open={confirmNewGame}
+        title="New game"
+        message="Reset all scores and the board, and head back to the lobby? Connected players stay in the room."
+        confirmLabel="New game"
         danger
         onConfirm={() => {
+          actions.resetScores.mutate([])
           actions.resetUsed.mutate([])
-          setConfirmBoardReset(false)
+          setConfirmNewGame(false)
+          setInLobby(true)
         }}
-        onCancel={() => setConfirmBoardReset(false)}
+        onCancel={() => setConfirmNewGame(false)}
       />
       <ConfirmDialog
         open={confirmScoreReset}
