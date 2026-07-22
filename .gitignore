@@ -30,3 +30,4 @@ backend/dist/
 
 # cloudflared binary (fetched pre-build, never committed)
 desktop/vendor/
+frontend/.tanstack/
