@@ -633,9 +633,84 @@ ipcMain.on('jeopardy:update-check', () => {
   checkForUpdates(true);
 });
 
+// Discord-style update splash: our process dies the moment NSIS starts, so
+// nothing WE own can show install progress. Instead we spawn a tiny detached
+// WPF window (via PowerShell — deliberately nothing from the install dir, so
+// it can never hold the file locks that caused the old corrupt-install bug).
+// It tracks two phases by polling processes — "Preparing" while we tear down,
+// "Installing" once we've exited — and closes itself when the new version
+// boots (or after a 2-minute give-up).
+//
+// PS syntax notes: no backticks and no ${ } anywhere (JS template literal);
+// here-string terminators must stay at column 0.
+const UPDATE_SPLASH_PS1 = `param([int]$OldPid = 0)
+$ErrorActionPreference = 'SilentlyContinue'
+Add-Type -AssemblyName PresentationFramework
+[xml]$xaml = @'
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Chaewon Jeopardy" Width="340" Height="180"
+        WindowStyle="None" ResizeMode="NoResize" WindowStartupLocation="CenterScreen"
+        Topmost="True" ShowInTaskbar="True" Background="#252525">
+  <Border BorderBrush="#505050" BorderThickness="1">
+    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+      <TextBlock Text="CHAEWON JEOPARDY!" Foreground="#7daf8d" FontSize="16" FontWeight="Bold" HorizontalAlignment="Center" FontFamily="Segoe UI" />
+      <TextBlock x:Name="StatusText" Text="Preparing update..." Foreground="#e5ddd5" FontSize="12" Margin="0,14,0,0" HorizontalAlignment="Center" FontFamily="Segoe UI" />
+      <ProgressBar IsIndeterminate="True" Width="240" Height="6" Margin="0,12,0,0" Foreground="#7daf8d" Background="#38332e" BorderThickness="0" />
+    </StackPanel>
+  </Border>
+</Window>
+'@
+$reader = New-Object System.Xml.XmlNodeReader $xaml
+$window = [Windows.Markup.XamlReader]::Load($reader)
+$status = $window.FindName('StatusText')
+$script:phase = 1
+$deadline = (Get-Date).AddSeconds(120)
+$timer = New-Object System.Windows.Threading.DispatcherTimer
+$timer.Interval = [TimeSpan]::FromMilliseconds(500)
+$timer.Add_Tick({
+  if ((Get-Date) -gt $deadline) { $window.Close(); return }
+  if ($script:phase -eq 1) {
+    $old = $null
+    if ($OldPid -gt 0) { $old = Get-Process -Id $OldPid -ErrorAction SilentlyContinue }
+    if (-not $old) {
+      $script:phase = 2
+      $status.Text = 'Installing update...'
+    }
+  } else {
+    $fresh = Get-Process -Name 'Chaewon Jeopardy' -ErrorAction SilentlyContinue
+    if ($fresh) { Start-Sleep -Milliseconds 800; $window.Close() }
+  }
+})
+$window.Add_Closed({ [System.Windows.Threading.Dispatcher]::CurrentDispatcher.InvokeShutdown() })
+$timer.Start()
+$window.Show()
+[System.Windows.Threading.Dispatcher]::Run()
+`;
+
+function showUpdateSplash() {
+  try {
+    const splashPath = path.join(app.getPath('temp'), 'chaewon-update-splash.ps1');
+    fs.writeFileSync(splashPath, UPDATE_SPLASH_PS1, 'utf8');
+    spawn(
+      'powershell.exe',
+      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-WindowStyle', 'Hidden', '-File', splashPath, String(process.pid)],
+      { detached: true, stdio: 'ignore', windowsHide: true },
+    ).unref();
+    shellLog('update splash spawned');
+  } catch (err) {
+    // Cosmetic only — a missing splash must never block the update itself.
+    shellLog('update splash failed to spawn: ' + err);
+  }
+}
+
 ipcMain.on('jeopardy:update-restart', () => {
   if (!autoUpdater) return;
   quitting = true;
+  // Splash first, then hide ourselves: the user sees ONE continuous
+  // "updating" surface from click to relaunch instead of dead air.
+  showUpdateSplash();
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.hide();
   shellLog('update-restart: tearing down sidecars before install');
   killSidecar();
   // The NSIS installer starts the moment we quit — ANY lingering backend
