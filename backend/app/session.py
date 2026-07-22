@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import secrets
 import string
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -23,6 +24,12 @@ from .models import Board, Player
 from .storage import store
 
 CODE_ALPHABET = string.ascii_uppercase
+
+# False-start penalty (seconds): buzzing before the arm — or while still
+# frozen from doing so — re-freezes YOUR buzzer, real-Jeopardy style. Mashing
+# is therefore self-defeating; clean timing always beats it. The controller
+# mirrors this constant for its local "Too soon" feedback.
+FALSE_START_PENALTY = 0.5
 
 
 def _room_code() -> str:
@@ -34,6 +41,9 @@ class Participant:
     token: str
     name: str
     socket: WebSocket | None = None
+    # time.monotonic() until which this player's buzzes are ignored
+    # (false-start penalty; 0 = never frozen).
+    frozen_until: float = 0.0
 
     @property
     def connected(self) -> bool:
@@ -255,6 +265,15 @@ class SessionManager:
                 (p for p in s.participants.values() if p.socket is socket), None
             )
             if player is None or player.name in s.locked_out:
+                return
+            now = time.monotonic()
+            if not s.armed:
+                # False start: each early press re-triggers the freeze, so a
+                # masher stays frozen for as long as they keep mashing.
+                player.frozen_until = now + FALSE_START_PENALTY
+                return
+            if now < player.frozen_until:
+                player.frozen_until = now + FALSE_START_PENALTY
                 return
             if s.armed and player.name not in s.order:
                 s.order.append(player.name)

@@ -20,6 +20,11 @@ function typingTarget(): boolean {
   )
 }
 
+/** Mirrors the server's FALSE_START_PENALTY (session.py) — buzzing before
+ * the arm freezes your buzzer briefly; each early press re-triggers it. The
+ * server enforces this with its own clock; this copy just makes it FELT. */
+const FALSE_START_MS = 500
+
 /** The giant round buzzer. Fires on pointerdown for minimum latency — one
  * event for touch, mouse, and pen alike (no click handler, so the click a
  * tap synthesizes can't double-buzz). Space/Enter buzz too while armed, so
@@ -32,6 +37,29 @@ export function BuzzerButton({ buzzer, you, buzz }: BuzzerButtonProps) {
     buzzer.phase !== 'locked' && buzzer.lockedOut.some((n) => n.toLowerCase() === me)
   const canBuzz = buzzer.phase === 'armed' && !lockedOut
   const wonByYou = buzzer.phase === 'won' && buzzer.winner.toLowerCase() === me
+
+  // Anti-cheese: pressing during WAIT (or while still frozen from doing so)
+  // is a false start — brief personal freeze + "Too soon" flash.
+  const frozenUntilRef = useRef(0)
+  const [tooSoonAt, setTooSoonAt] = useState<number | null>(null)
+  useEffect(() => {
+    if (tooSoonAt === null) return
+    const t = window.setTimeout(() => setTooSoonAt(null), 900)
+    return () => window.clearTimeout(t)
+  }, [tooSoonAt])
+
+  const press = () => {
+    const now = Date.now()
+    if (buzzer.phase === 'locked' || (canBuzz && now < frozenUntilRef.current)) {
+      frozenUntilRef.current = now + FALSE_START_MS
+      setTooSoonAt(now)
+      navigator.vibrate?.(80)
+      return
+    }
+    if (canBuzz) buzz()
+  }
+  const pressRef = useRef(press)
+  pressRef.current = press
 
   // Evaluated once: the device's pointer class doesn't change mid-session.
   const [finePointer] = useState(() => window.matchMedia('(pointer: fine)').matches)
@@ -46,16 +74,18 @@ export function BuzzerButton({ buzzer, you, buzz }: BuzzerButtonProps) {
     if (buzzer.phase !== 'won') celebratedRef.current = false
   }, [wonByYou, buzzer.phase])
 
+  // Listen while WAITING too — false starts must be felt, not swallowed.
+  const keysLive = canBuzz || buzzer.phase === 'locked'
   useEffect(() => {
-    if (!canBuzz) return
+    if (!keysLive) return
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.repeat || (e.key !== ' ' && e.key !== 'Enter') || typingTarget()) return
       e.preventDefault() // no page scroll, no focused-button click on top
-      buzz()
+      pressRef.current()
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [canBuzz, buzz])
+  }, [keysLive])
 
   let label: string
   let style: string
@@ -83,11 +113,13 @@ export function BuzzerButton({ buzzer, you, buzz }: BuzzerButtonProps) {
     <div className="flex flex-col items-center gap-3">
       <button
         type="button"
-        disabled={!canBuzz}
+        // Stays ENABLED during WAIT so false starts register (and penalize);
+        // truly inert only when locked out or someone already won.
+        disabled={buzzer.phase === 'won' || lockedOut}
         onPointerDown={(e) => {
           // Primary button/touch/pen only — right and middle click must not buzz.
           if (e.button !== 0) return
-          if (canBuzz) buzz()
+          press()
         }}
         aria-label={canBuzz ? 'Buzz in' : label}
         className={clsx(
@@ -101,7 +133,13 @@ export function BuzzerButton({ buzzer, you, buzz }: BuzzerButtonProps) {
       >
         {label}
       </button>
-      {finePointer && <p className="text-ink-faint text-xs">or press Space</p>}
+      {tooSoonAt !== null ? (
+        <p key={tooSoonAt} className="text-danger animate-scale-in text-xs font-bold">
+          Too soon — wait for it…
+        </p>
+      ) : (
+        finePointer && <p className="text-ink-faint text-xs">or press Space</p>
+      )}
     </div>
   )
 }

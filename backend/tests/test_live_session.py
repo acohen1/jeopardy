@@ -65,8 +65,10 @@ def test_buzz_arbitration_first_wins_and_lockout(client, board):
                     return msg["snapshot"]
             raise AssertionError("expected snapshot not received")
 
-        # buzz while locked → ignored
+        # buzz while locked → ignored (and, since the false-start penalty,
+        # briefly frozen — sit it out so the post-arm buzz below is clean)
         p1.send_json({"type": "buzz"})
+        time.sleep(0.8)
         host.send_json({"type": "command", "command": "arm"})
         drain_until(host, lambda s2: s2["buzzer"]["phase"] == "armed")
 
@@ -399,6 +401,43 @@ def test_rename_mid_won_keeps_winner_awardable(client, board):
         assert r.status_code == 200
         msg = _drain(phone, lambda m: m["type"] == "result")
         assert msg["player"] == "Chaewon" and msg["delta"] == 600
+
+
+def test_false_start_freezes_the_masher(client, board):
+    """Buzzing before the arm (or while frozen) is ignored and re-freezes —
+    mashing loses to clean timing; the penalty expires on its own."""
+    s = _start(client, board)
+    with client.websocket_connect("/api/ws") as host_ws, \
+            client.websocket_connect("/api/ws") as masher, \
+            client.websocket_connect("/api/ws") as sniper:
+        host_ws.send_json({"type": "hello-host", "hostKey": s["hostKey"]})
+        host_ws.receive_json()
+        masher.send_json({"type": "hello-player", "code": s["code"], "name": "Masher"})
+        masher.receive_json()
+        sniper.send_json({"type": "hello-player", "code": s["code"], "name": "Sniper"})
+        sniper.receive_json()
+
+        masher.send_json({"type": "buzz"})  # false start — buzzers not armed
+        host_ws.send_json({"type": "command", "command": "arm"})
+        _drain(host_ws, lambda m: m["type"] == "snapshot"
+               and m["snapshot"]["buzzer"]["phase"] == "armed")
+        masher.send_json({"type": "buzz"})  # still frozen → ignored, re-frozen
+        sniper.send_json({"type": "buzz"})  # clean press → wins
+        won = _drain(host_ws, lambda m: m["type"] == "snapshot"
+                     and m["snapshot"]["buzzer"]["phase"] == "won")
+        assert won["snapshot"]["buzzer"]["winner"] == "Sniper"
+        assert "Masher" not in won["snapshot"]["buzzer"]["order"]
+
+        # The freeze expires: sit it out, then the masher's clean buzz wins.
+        host_ws.send_json({"type": "command", "command": "reset-buzzer"})
+        time.sleep(0.8)
+        host_ws.send_json({"type": "command", "command": "arm"})
+        _drain(host_ws, lambda m: m["type"] == "snapshot"
+               and m["snapshot"]["buzzer"]["phase"] == "armed")
+        masher.send_json({"type": "buzz"})
+        won2 = _drain(host_ws, lambda m: m["type"] == "snapshot"
+                      and m["snapshot"]["buzzer"]["phase"] == "won")
+        assert won2["snapshot"]["buzzer"]["winner"] == "Masher"
 
 
 def test_token_reconnect_recreates_deleted_board_player(client, board):
