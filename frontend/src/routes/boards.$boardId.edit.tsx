@@ -42,7 +42,7 @@ function Editor({ initial }: { initial: Board }) {
   const { data: liveBoard } = useSuspenseQuery(boardQuery(board.id))
   const gameActions = useGameActions(board.id)
   const [rulesOpen, setRulesOpen] = useState(false)
-  usePageTitle(`${board.name} · Edit — Chaewon Jeopardy`)
+  usePageTitle(`${board.name} · Edit — Rhubarb`)
 
   // Ctrl/Cmd+S — flush the debounced autosave right now. useHotkeys skips all
   // ctrl/meta chords by design, so this needs its own window listener; it lives

@@ -1,9 +1,9 @@
 ---
 name: verify
-description: Build, run, and drive the Chaewon Jeopardy web app (FastAPI backend + Vite frontend) for end-to-end verification with Playwright.
+description: Build, run, and drive the Rhubarb web app (FastAPI backend + Vite frontend) for end-to-end verification with Playwright.
 ---
 
-# Verifying Chaewon Jeopardy
+# Verifying Rhubarb
 
 ## Toolchain paths (NOT on default PATH in non-interactive shells)
 

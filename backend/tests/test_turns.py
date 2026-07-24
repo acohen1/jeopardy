@@ -24,7 +24,7 @@ def _add_player(client, board_id, name):
 
 
 def test_builtin_defaults(client):
-    """No app defaults saved yet → real-Jeopardy flow out of the box."""
+    """No app defaults saved yet → classic game-show flow out of the box."""
     r = client.post("/api/boards", json={"name": "Fresh"})
     assert r.status_code == 201
     b = r.json()

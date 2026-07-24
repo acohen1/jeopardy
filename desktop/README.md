@@ -1,12 +1,12 @@
-# Chaewon Jeopardy — desktop shell
+# Rhubarb — desktop shell
 
 Electron wrapper around the FastAPI backend (bundled as a PyInstaller sidecar,
-`jeopardy-backend.exe`) and the built Vite frontend. Plain CommonJS
+`rhubarb-backend.exe`) and the built Vite frontend. Plain CommonJS
 (`main.cjs` / `preload.cjs`), no bundler.
 
 The preload exposes `window.jeopardy` implementing **exactly** the
 `DesktopBridge` contract in `frontend/src/lib/desktop.ts` (update state,
-what's-new, `.jeopardy` import events).
+what's-new, `.rhubarb` import events).
 
 ## Dev run
 
@@ -24,7 +24,7 @@ npm run desktop:dev
 
 `main.cjs` treats a non-packaged app as dev automatically; you can also force
 it with the env var `JEOPARDY_DEV=1`. In dev the window loads
-`http://localhost:5173` and `.jeopardy` imports POST to `http://127.0.0.1:8000`.
+`http://localhost:5173` and `.rhubarb` imports POST to `http://127.0.0.1:8000`.
 
 ## Package (Windows installer)
 
@@ -38,19 +38,19 @@ npm run desktop:package
 npm run desktop:package:dir
 ```
 
-Output lands in `desktop/dist/` (`Chaewon-Jeopardy-Setup-<version>.exe`).
+Output lands in `desktop/dist/` (`Rhubarb-Setup-<version>.exe`).
 
-The installer is one-click, per-user, registers the `.jeopardy` file
+The installer is one-click, per-user, registers the `.rhubarb` (and legacy `.jeopardy`) file
 association, and bundles:
 
-- `resources/jeopardy-backend.exe` — the FastAPI sidecar
+- `resources/rhubarb-backend.exe` — the FastAPI sidecar
 - `resources/frontend-dist` — the built SPA (served by the sidecar via
   the `FRONTEND_DIST` env var)
 
 At runtime the shell picks a free port, spawns the sidecar with
-`PORT` / `JEOPARDY_DATA_DIR` (`%APPDATA%\Chaewon Jeopardy`) /
+`PORT` / `RHUBARB_DATA_DIR` (`%APPDATA%\Rhubarb`) /
 `FRONTEND_DIST` / `JEOPARDY_HOST` (persisted in
-`%APPDATA%\chaewon-jeopardy\settings.json`, default `127.0.0.1`; set `host`
+`%APPDATA%\rhubarb\settings.json`, default `127.0.0.1`; set `host`
 there to `0.0.0.0` to expose the TV view on the LAN), waits for
 `GET /api/health`, then shows the window. The whole sidecar process tree is
 killed on quit.

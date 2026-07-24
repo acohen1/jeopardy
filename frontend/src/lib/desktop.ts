@@ -51,7 +51,7 @@ export interface DesktopBridge {
      * Resolves null if the user cancelled.
      */
     choose(): Promise<{ path: string } | null>
-    /** Reset to the default (%APPDATA%/Chaewon Jeopardy) and respawn. */
+    /** Reset to the default (%APPDATA%/Rhubarb) and respawn. */
     resetToDefault(): Promise<void>
   }
   lan: {

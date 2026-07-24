@@ -141,13 +141,13 @@ def duplicate_board(board_id: str) -> Board:
 def export_board(board_id: str) -> Response:
     board = get_or_404(board_id)
     data = store.export_zip(board_id)
-    # .jeopardy (a zip inside) — a single custom extension so the desktop
+    # .rhubarb (a zip inside; .jeopardy pre-rename) — a custom extension so the desktop
     # app can own the file association without hijacking .zip
     slug = re.sub(r"[^A-Za-z0-9_-]+", "_", board.name).strip("_") or "board"
     return Response(
         content=data,
         media_type="application/zip",
         headers={
-            "Content-Disposition": f'attachment; filename="{slug}.jeopardy"'
+            "Content-Disposition": f'attachment; filename="{slug}.rhubarb"'
         },
     )

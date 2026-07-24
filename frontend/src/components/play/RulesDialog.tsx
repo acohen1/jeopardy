@@ -22,7 +22,7 @@ const TURN_MODES: { value: TurnMode; label: string; hint: string }[] = [
   {
     value: 'first-correct',
     label: 'First correct answer',
-    hint: 'Real Jeopardy: whoever answers right picks the next clue.',
+    hint: 'The classic rule: whoever answers right picks the next clue.',
   },
   {
     value: 'sequential',

@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from .routers import assets, boards, game, live
 from .storage import BoardNotFound
 
-app = FastAPI(title="Chaewon Jeopardy", version="2.0.0")
+app = FastAPI(title="Rhubarb", version="2.0.0")
 
 
 @app.exception_handler(BoardNotFound)

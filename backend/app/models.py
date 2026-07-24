@@ -53,7 +53,7 @@ class Cell(BaseModel):
     answer_slide: Slide = Field(default_factory=Slide)
     value: int = 0
     used: bool = False
-    # Bonus ("Daily Double") tile: looks normal on the play board, but opens
+    # Bonus tile: looks normal on the play board, but opens
     # with a reveal splash + host wager instead of the flat value.
     bonus: bool = False
 
@@ -97,7 +97,7 @@ class Board(BaseModel):
     row_values: list[int] = Field(default_factory=lambda: list(DEFAULT_VALUES))
     cells: list[list[Cell]] = Field(default_factory=list)
     allow_negatives: bool = True
-    turn_mode: TurnMode = "first-correct"  # real-Jeopardy flow out of the box
+    turn_mode: TurnMode = "first-correct"  # classic game-show flow out of the box
     multi_award: MultiAwardRule = "first"
     first_pick: FirstPick = "random"
     # Whose pick it is right now (game state, like scores — None until

@@ -110,7 +110,7 @@ export function AboutDialog({ open, onClose }: { open: boolean; onClose: () => v
           </span>
           <div>
             <div className="font-display text-ink text-lg font-bold tracking-wide">
-              Chaewon Jeopardy
+              Rhubarb
             </div>
             <div className="text-ink-muted text-sm">v{desktop.appVersion}</div>
           </div>
@@ -139,7 +139,7 @@ export function AboutDialog({ open, onClose }: { open: boolean; onClose: () => v
         <p className="text-ink-faint mt-5 text-xs">
           Updates install automatically on restart.{' '}
           <a
-            href="https://github.com/acohen1/jeopardy/releases"
+            href="https://github.com/acohen1/rhubarb/releases"
             target="_blank"
             rel="noreferrer"
             className="text-accent hover:text-accent-bright underline-offset-2 hover:underline"
@@ -164,7 +164,7 @@ export function VersionChip() {
         type="button"
         onClick={() => setOpen(true)}
         className="text-ink-faint hover:text-ink mt-1.5 cursor-pointer text-xs tracking-wide transition-colors"
-        title="About Chaewon Jeopardy"
+        title="About Rhubarb"
       >
         v{desktop.appVersion}
       </button>

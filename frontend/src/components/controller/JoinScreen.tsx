@@ -62,7 +62,7 @@ export function JoinScreen({ error, onJoin }: JoinScreenProps) {
       }}
     >
       <div className="text-center">
-        <p className="text-ink-muted text-sm tracking-wide">Chaewon Jeopardy</p>
+        <p className="text-ink-muted text-sm tracking-wide">Rhubarb</p>
         <h1 className="font-display text-ink mt-1 text-3xl font-bold">Join the game</h1>
       </div>
 

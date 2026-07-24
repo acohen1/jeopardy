@@ -713,7 +713,7 @@ $window.Show()
 
 function showUpdateSplash() {
   try {
-    const splashPath = path.join(app.getPath('temp'), 'chaewon-update-splash.ps1');
+    const splashPath = path.join(app.getPath('temp'), 'rhubarb-update-splash.ps1');
     fs.writeFileSync(splashPath, UPDATE_SPLASH_PS1, 'utf8');
     spawn(
       'powershell.exe',

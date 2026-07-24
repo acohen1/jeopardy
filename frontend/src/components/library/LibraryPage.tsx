@@ -155,8 +155,8 @@ export function LibraryPage() {
       <header className="flex flex-wrap items-end justify-between gap-x-8 gap-y-5">
         <div>
           <h1 className="font-display text-3xl leading-none font-black tracking-[0.16em] uppercase sm:text-4xl">
-            <span className="text-ink">Chaewon</span>{' '}
-            <span className="text-accent">Jeopardy</span>
+            <span className="text-ink">Rhu</span>
+            <span className="text-accent">barb!</span>
           </h1>
           <div className="via-accent/60 mt-3 h-px w-full max-w-105 bg-gradient-to-r from-accent to-transparent" />
           <p className="text-ink-muted mt-2.5 text-sm tracking-wide">
@@ -222,7 +222,7 @@ export function LibraryPage() {
       <input
         ref={fileRef}
         type="file"
-        accept=".jeopardy,.json,.zip"
+        accept=".rhubarb,.jeopardy,.json,.zip"
         className="hidden"
         onChange={(e) => {
           const file = e.currentTarget.files?.[0]
