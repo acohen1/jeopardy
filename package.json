@@ -9,7 +9,7 @@
     "typecheck": "cd frontend && npx tsc --noEmit",
     "test:api": "cd backend && uv run pytest",
     "desktop:dev": "cd desktop && npm run dev",
-    "desktop:build:backend": "cd backend && uv run pyinstaller jeopardy-backend.spec --noconfirm",
+    "desktop:build:backend": "cd backend && uv run pyinstaller rhubarb-backend.spec --noconfirm",
     "desktop:build:frontend": "cd frontend && npm run build",
     "desktop:fetch-tunnel": "node desktop/scripts/fetch-cloudflared.cjs",
     "desktop:package": "npm run desktop:build:frontend && npm run desktop:build:backend && npm run desktop:fetch-tunnel && cd desktop && npx electron-builder --win --publish never",

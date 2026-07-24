@@ -1,9 +1,9 @@
 /**
- * Chaewon Jeopardy — Electron main process.
+ * Rhubarb — Electron main process.
  *
  * Responsibilities:
  *   - single-instance lock (second launch focuses window + forwards argv)
- *   - spawn/kill the FastAPI sidecar (resources/jeopardy-backend.exe)
+ *   - spawn/kill the FastAPI sidecar (resources/rhubarb-backend.exe)
  *   - .jeopardy file association -> POST /api/boards/import -> 'jeopardy:imported'
  *   - electron-updater wired to the UpdateState contract in
  *     frontend/src/lib/desktop.ts (pushed via 'jeopardy:update-state')
@@ -26,7 +26,24 @@ const path = require('path');
 // Mode & constants
 // ---------------------------------------------------------------------------
 
-const isDev = process.env.JEOPARDY_DEV === '1' || !app.isPackaged;
+const isDev = process.env.RHUBARB_DEV === '1' || !app.isPackaged;
+
+// One-time rename-era migration: this app was "Chaewon Jeopardy" through
+// v2.3.0. Carry the whole data dir (settings, shell.log, and the default
+// board library inside it) to the Rhubarb name so nobody loses a thing.
+// Must run before ANYTHING touches the data dir, hence module top-level.
+(function migrateLegacyAppData() {
+  try {
+    const appData = app.getPath('appData');
+    const oldDir = path.join(appData, 'Chaewon Jeopardy');
+    const newDir = path.join(appData, 'Rhubarb');
+    if (fs.existsSync(oldDir) && !fs.existsSync(newDir)) {
+      fs.renameSync(oldDir, newDir);
+    }
+  } catch {
+    // Fresh dir it is — the old one stays intact for manual rescue.
+  }
+})();
 const DEV_URL = 'http://localhost:5173';
 const DEV_API = 'http://127.0.0.1:8000';
 const HEALTH_TIMEOUT_MS = 20000;
@@ -47,13 +64,13 @@ let resolveBackendReady;
 const backendReady = new Promise((resolve) => { resolveBackendReady = resolve; });
 
 // ---------------------------------------------------------------------------
-// Shell log — %APPDATA%/Chaewon Jeopardy/shell.log
+// Shell log — %APPDATA%/Rhubarb/shell.log
 // Field failures (like a broken update) were undiagnosable without this.
 // ---------------------------------------------------------------------------
 
 function shellLog(line) {
   try {
-    const dir = path.join(app.getPath('appData'), 'Chaewon Jeopardy');
+    const dir = path.join(app.getPath('appData'), 'Rhubarb');
     fs.mkdirSync(dir, { recursive: true });
     fs.appendFileSync(
       path.join(dir, 'shell.log'),
@@ -64,7 +81,7 @@ function shellLog(line) {
 }
 
 /**
- * Kill ANY jeopardy-backend.exe on the system — not just our child.
+ * Kill ANY rhubarb-backend.exe on the system — not just our child.
  * Orphaned sidecars (crashes, hard kills) keep the exe file locked, and a
  * locked file during an auto-update means NSIS silently skips it → corrupt
  * install → "spawn UNKNOWN" on next launch. Run before spawning and before
@@ -73,7 +90,13 @@ function shellLog(line) {
 function killStrayBackends(context) {
   if (process.platform !== 'win32') return;
   try {
-    const result = spawnSync('taskkill', ['/IM', 'jeopardy-backend.exe', '/F', '/T'], {
+    // Legacy name too: orphans from pre-rename ("Chaewon Jeopardy") installs
+    // hold the same kinds of locks. Harmless no-op once none exist.
+    spawnSync('taskkill', ['/IM', 'jeopardy-backend.exe', '/F', '/T'], {
+      windowsHide: true,
+      timeout: 10000,
+    });
+    const result = spawnSync('taskkill', ['/IM', 'rhubarb-backend.exe', '/F', '/T'], {
       windowsHide: true,
       timeout: 10000,
     });
@@ -236,7 +259,7 @@ async function waitForHealth(base, timeoutMs) {
 
 /** Default library location — the same directory the legacy app used. */
 function defaultDataDir() {
-  return path.join(app.getPath('appData'), 'Chaewon Jeopardy');
+  return path.join(app.getPath('appData'), 'Rhubarb');
 }
 
 /** Effective data directory: the user's persisted choice, else the default. */
@@ -251,7 +274,7 @@ function getDataDir() {
 let respawning = false;
 
 async function startSidecar() {
-  const exePath = path.join(process.resourcesPath, 'jeopardy-backend.exe');
+  const exePath = path.join(process.resourcesPath, 'rhubarb-backend.exe');
   if (!fs.existsSync(exePath)) {
     throw new Error(
       `Backend executable not found at:\n${exePath}\n\nReinstalling the app fixes this.`
@@ -285,8 +308,8 @@ async function startSidecar() {
         env: {
           ...process.env,
           PORT: String(port),
-          JEOPARDY_HOST: host,
-          JEOPARDY_DATA_DIR: dataDir,
+          RHUBARB_HOST: host,
+          RHUBARB_DATA_DIR: dataDir,
           FRONTEND_DIST: path.join(process.resourcesPath, 'frontend-dist'),
         },
         stdio: 'ignore',
@@ -319,7 +342,7 @@ async function startSidecar() {
     sidecar = null;
     if (!quitting && !respawning) {
       dialog.showErrorBox(
-        'Chaewon Jeopardy',
+        'Rhubarb',
         `The backend process exited unexpectedly (code ${code}). The app will now close.`
       );
       app.quit();
@@ -649,12 +672,12 @@ Add-Type -AssemblyName PresentationFramework
 [xml]$xaml = @'
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Chaewon Jeopardy" Width="340" Height="180"
+        Title="Rhubarb" Width="340" Height="180"
         WindowStyle="None" ResizeMode="NoResize" WindowStartupLocation="CenterScreen"
         Topmost="True" ShowInTaskbar="True" Background="#252525">
   <Border BorderBrush="#505050" BorderThickness="1">
     <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-      <TextBlock Text="CHAEWON JEOPARDY!" Foreground="#7daf8d" FontSize="16" FontWeight="Bold" HorizontalAlignment="Center" FontFamily="Segoe UI" />
+      <TextBlock Text="RHUBARB!" Foreground="#7daf8d" FontSize="16" FontWeight="Bold" HorizontalAlignment="Center" FontFamily="Segoe UI" />
       <TextBlock x:Name="StatusText" Text="Preparing update..." Foreground="#e5ddd5" FontSize="12" Margin="0,14,0,0" HorizontalAlignment="Center" FontFamily="Segoe UI" />
       <ProgressBar IsIndeterminate="True" Width="240" Height="6" Margin="0,12,0,0" Foreground="#7daf8d" Background="#38332e" BorderThickness="0" />
     </StackPanel>
@@ -678,7 +701,7 @@ $timer.Add_Tick({
       $status.Text = 'Installing update...'
     }
   } else {
-    $fresh = Get-Process -Name 'Chaewon Jeopardy' -ErrorAction SilentlyContinue
+    $fresh = Get-Process -Name 'Rhubarb' -ErrorAction SilentlyContinue
     if ($fresh) { Start-Sleep -Milliseconds 800; $window.Close() }
   }
 })
@@ -768,7 +791,7 @@ ipcMain.handle('jeopardy:storage-choose', async () => {
   }
 
   const picked = await dialog.showOpenDialog(mainWindow, {
-    title: 'Choose where Chaewon Jeopardy stores your boards',
+    title: 'Choose where Rhubarb stores your boards',
     defaultPath: getDataDir(),
     properties: ['openDirectory', 'createDirectory'],
   });
@@ -1044,7 +1067,7 @@ if (gotLock) {
         killSidecar();
         shellLog(`startup failed: ${err.message || err}`);
         dialog.showErrorBox(
-          'Chaewon Jeopardy failed to start',
+          'Rhubarb failed to start',
           `${err.message || err}`
         );
         app.quit();

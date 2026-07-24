@@ -76,7 +76,7 @@ jobs:
         run: |
           cd backend
           uv sync
-          uv run pyinstaller jeopardy-backend.spec --noconfirm
+          uv run pyinstaller rhubarb-backend.spec --noconfirm
 
       - name: Create release (RELEASE_NOTES.md section for this version is REQUIRED)
         if: steps.guard.outputs.skip == 'false'
@@ -103,7 +103,7 @@ jobs:
           }
           $body = "## v$v`n`n" + $m.Groups[1].Value.Trim()
           Set-Content -Path release-body.md -Value $body -Encoding utf8
-          gh release create "v$v" --title "Chaewon Jeopardy v$v" --notes-file release-body.md
+          gh release create "v$v" --title "Rhubarb v$v" --notes-file release-body.md
           exit 0
 
       - name: Fetch cloudflared (remote-play tunnel client)
@@ -122,5 +122,5 @@ jobs:
           npx electron-builder --win --publish always
 
 # (The installer's artifactName is version-free — see electron-builder.yml —
-# so releases/latest/download/Chaewon-Jeopardy-Setup.exe is permanent with no
+# so releases/latest/download/Rhubarb-Setup.exe is permanent with no
 # extra upload step, and each release page carries exactly one exe.)

@@ -1,5 +1,5 @@
 [project]
-name = "chaewon-jeopardy-backend"
+name = "rhubarb-backend"
 version = "0.1.0"
 description = "FastAPI backend for the Chaewon Jeopardy game builder/player"
 requires-python = ">=3.13"

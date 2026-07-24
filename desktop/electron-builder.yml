@@ -1,8 +1,11 @@
-# electron-builder configuration for the Chaewon Jeopardy desktop shell.
+# electron-builder configuration for the Rhubarb desktop shell.
 # Docs: https://www.electron.build/configuration
 
+# appId is the app's INVISIBLE machine identity (registry keys, update
+# continuity, install-dir resolution). It keeps the pre-rename value ON
+# PURPOSE: changing it would orphan every installed copy. Never touch it.
 appId: chaewon.jeopardy.app
-productName: Chaewon Jeopardy
+productName: Rhubarb
 
 directories:
   output: dist
@@ -18,8 +21,8 @@ files:
 # process.resourcesPath. Build backend + frontend FIRST (npm run desktop:package
 # at the repo root does all three in order).
 extraResources:
-  - from: ../backend/dist/jeopardy-backend.exe
-    to: jeopardy-backend.exe
+  - from: ../backend/dist/rhubarb-backend.exe
+    to: rhubarb-backend.exe
   - from: ../frontend/dist
     to: frontend-dist
   # Remote play: cloudflared quick-tunnel client (scripts/fetch-cloudflared.cjs
@@ -32,9 +35,9 @@ win:
   icon: build/icon.ico
   # Version-free on purpose: assets are scoped per-release on GitHub, so one
   # name serves both the auto-updater (latest.yml points at it) and the
-  # permanent download link releases/latest/download/Chaewon-Jeopardy-Setup.exe
+  # permanent download link releases/latest/download/Rhubarb-Setup.exe
   # — and the release page shows exactly ONE exe.
-  artifactName: "Chaewon-Jeopardy-Setup.${ext}"
+  artifactName: "Rhubarb-Setup.${ext}"
 
 # Classic assisted install wizard (not one-click): welcome page, choose the
 # install folder, shortcuts, run-after-finish. Defaults to the per-user
@@ -48,7 +51,7 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
-  shortcutName: Chaewon Jeopardy
+  shortcutName: Rhubarb
   runAfterFinish: true
   installerIcon: build/icon.ico
   uninstallerIcon: build/icon.ico
@@ -56,8 +59,12 @@ nsis:
   deleteAppDataOnUninstall: false
 
 fileAssociations:
+  - ext: rhubarb
+    name: Rhubarb Board
+    icon: build/icon.ico
+  # Pre-rename boards keep double-click-to-import forever.
   - ext: jeopardy
-    name: Jeopardy Board
+    name: Rhubarb Board (legacy)
     icon: build/icon.ico
 
 # Auto-update feed: GitHub Releases on this repo. The release workflow

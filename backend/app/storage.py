@@ -38,6 +38,9 @@ from .models import (
 # Where legacy desktop-app assets might live on this machine — used to
 # resolve media referenced by a bare .json import (no zip = no bundled assets).
 LEGACY_ASSET_SEARCH_PATHS = [
+    # Post-rename data dir first (the shell migrates the old folder here),
+    # then the pre-rename name in case migration never ran on this machine.
+    Path(os.environ.get("APPDATA", "")) / "Rhubarb" / "assets",
     Path(os.environ.get("APPDATA", "")) / "Chaewon Jeopardy" / "assets",
     Path(__file__).resolve().parent.parent.parent / "legacy" / "assets",
 ]
@@ -73,7 +76,7 @@ class BoardStore:
     def __init__(self, data_dir: str | Path | None = None):
         if data_dir is None:
             data_dir = os.environ.get(
-                "JEOPARDY_DATA_DIR",
+                "RHUBARB_DATA_DIR",
                 Path(__file__).resolve().parent.parent / "data",
             )
         self.data_dir = Path(data_dir)

@@ -1,6 +1,6 @@
 # PyInstaller spec — one-file backend sidecar for the desktop app.
-# Build:  uv run pyinstaller jeopardy-backend.spec  (from backend/)
-# Output: backend/dist/jeopardy-backend.exe
+# Build:  uv run pyinstaller rhubarb-backend.spec  (from backend/)
+# Output: backend/dist/rhubarb-backend.exe
 a = Analysis(
     ["desktop_entry.py"],
     pathex=["."],
@@ -19,7 +19,7 @@ exe = EXE(
     a.scripts,
     a.binaries,
     a.datas,
-    name="jeopardy-backend",
+    name="rhubarb-backend",
     console=False,
     upx=False,
 )
