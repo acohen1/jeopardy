@@ -182,13 +182,15 @@ function focusMainWindow() {
   mainWindow.focus();
 }
 
-/** Extract absolute paths to existing .jeopardy files from an argv array. */
+/** Extract absolute paths to existing board files (.rhubarb, or legacy
+ * .jeopardy) from an argv array. */
 function jeopardyPathsFromArgv(argv, workingDirectory) {
   const out = [];
   for (const arg of argv || []) {
     if (typeof arg !== 'string') continue;
     if (arg.startsWith('-')) continue; // flags (e.g. --allow-file-access)
-    if (!arg.toLowerCase().endsWith('.jeopardy')) continue;
+    const lower = arg.toLowerCase();
+    if (!lower.endsWith('.rhubarb') && !lower.endsWith('.jeopardy')) continue;
     const abs = path.isAbsolute(arg)
       ? arg
       : path.resolve(workingDirectory || process.cwd(), arg);
@@ -452,7 +454,8 @@ async function importJeopardyFile(filePath) {
 // macOS-style open-file (harmless on Windows; argv covers Windows launches).
 app.on('open-file', (event, filePath) => {
   event.preventDefault();
-  if (filePath.toLowerCase().endsWith('.jeopardy')) queueImport(filePath);
+  const lower = filePath.toLowerCase();
+  if (lower.endsWith('.rhubarb') || lower.endsWith('.jeopardy')) queueImport(filePath);
 });
 
 // ---------------------------------------------------------------------------

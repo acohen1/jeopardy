@@ -1,7 +1,7 @@
 {
   "name": "rhubarb",
   "productName": "Rhubarb",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "private": true,
   "description": "Rhubarb desktop shell (Electron)",
   "main": "main.cjs",

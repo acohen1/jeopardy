@@ -74,5 +74,5 @@ fileAssociations:
 publish:
   provider: github
   owner: acohen1
-  repo: jeopardy
+  repo: rhubarb
   releaseType: release

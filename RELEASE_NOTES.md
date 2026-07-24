@@ -9,6 +9,18 @@
 <!-- Release prep = bump desktop/package.json + add a new section here, one commit. -->
 <!-- Plain lines and "- " bullets render best in-app. -->
 
+## v2.4.0
+
+We are Rhubarb now! 🌱 Same game, new name:
+
+- Everything says Rhubarb — the app, the installer, the board, the shortcuts
+- Your boards, scores, and settings move over automatically; nothing to do
+- Board files now save as .rhubarb (old .jeopardy files open forever)
+- New permanent download link: github.com/acohen1/rhubarb — old links redirect
+- Invite over the internet now also lives in the mid-game Room panel
+- A proper update screen: watch the install happen instead of wondering if anything is
+- False-start lockout — buzzing before the host arms freezes YOUR buzzer for half a second, so mashing is a losing strategy and clean timing wins
+
 ## v2.3.0
 
 The Party Update — your phones are the buzzers now:
